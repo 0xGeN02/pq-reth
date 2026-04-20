@@ -15,7 +15,7 @@ use crate::error::PqError;
 ///
 /// The Ethereum `Address` is derived as the last 20 bytes of the Keccak-256
 /// hash of the encoded key, matching the classical address derivation scheme.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PqPublicKey {
     /// Raw encoded verifying key bytes (1952 bytes for ML-DSA-65).
     bytes: Vec<u8>,
@@ -52,7 +52,7 @@ impl PqPublicKey {
 // ─── PqSignature ─────────────────────────────────────────────────────────────
 
 /// An ML-DSA-65 signature — 3309 bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PqSignature {
     /// Raw encoded signature bytes.
     bytes: Vec<u8>,

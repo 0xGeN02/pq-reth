@@ -3172,6 +3172,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4850db49bf08e663084f7fb5c87d202ef91a3907271aff24a94eb97ff039153c"
 dependencies = [
  "block-buffer 0.12.0",
+ "const-oid 0.10.2",
  "crypto-common 0.2.1",
 ]
 
@@ -9674,13 +9675,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-pq-evm"
+version = "1.11.1"
+dependencies = [
+ "alloy-evm",
+ "alloy-primitives",
+ "eyre",
+ "reth-chainspec",
+ "reth-ethereum-primitives",
+ "reth-evm-ethereum",
+ "reth-node-api",
+ "reth-node-builder",
+ "reth-pq-precompile",
+ "reth-primitives-traits",
+ "revm-precompile",
+]
+
+[[package]]
+name = "reth-pq-pool"
+version = "1.11.1"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
+ "reth-ethereum-primitives",
+ "reth-pq-primitives",
+ "reth-primitives-traits",
+ "reth-transaction-pool",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "reth-pq-precompile"
+version = "1.11.1"
+dependencies = [
+ "alloy-primitives",
+ "dilithium",
+ "revm-precompile",
+ "sha3 0.11.0",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "reth-pq-primitives"
 version = "1.11.1"
 dependencies = [
  "alloy-consensus",
+ "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "bytes",
  "dilithium",
+ "reth-primitives-traits",
  "serde",
  "sha3 0.11.0",
  "thiserror 2.0.18",

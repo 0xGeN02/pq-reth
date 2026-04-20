@@ -1,0 +1,31 @@
+[package]
+name = "reth-pq-precompile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "ML-DSA-65 verify precompile (address 0x09) for pq-reth"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Post-quantum crypto
+dilithium = { workspace = true }
+
+# revm precompile interface
+revm-precompile = { workspace = true, features = ["std"] }
+
+# Alloy primitives for Address
+alloy-primitives = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+sha3 = "0.11"
+
+[features]
+default = ["std"]
+std = ["revm-precompile/std", "alloy-primitives/std", "thiserror/std"]

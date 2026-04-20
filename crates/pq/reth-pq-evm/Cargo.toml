@@ -1,0 +1,36 @@
+[package]
+name = "reth-pq-evm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Post-quantum EVM configuration — wires the ML-DSA-65 precompile into the Ethereum EVM"
+
+[lints]
+workspace = true
+
+[dependencies]
+reth-pq-precompile = { workspace = true }
+
+# reth / alloy EVM stack
+alloy-evm                = { workspace = true }
+reth-evm-ethereum        = { workspace = true }
+reth-ethereum-primitives = { workspace = true }
+reth-primitives-traits   = { workspace = true }
+reth-node-api            = { workspace = true }
+reth-node-builder        = { workspace = true }
+reth-chainspec           = { workspace = true }
+
+# revm types re-exported via alloy-evm
+revm-precompile          = { workspace = true }
+
+alloy-primitives         = { workspace = true }
+eyre                     = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "alloy-primitives/std",
+    "alloy-evm/std",
+]

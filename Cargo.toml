@@ -158,6 +158,9 @@ members = [
     # Post-Quantum EVM extensions
     "crates/pq/reth-pq-primitives",
     "crates/pq/reth-pq-consensus",
+    "crates/pq/reth-pq-precompile",
+    "crates/pq/reth-pq-pool",
+    "crates/pq/reth-pq-evm",
 ]
 default-members = ["bin/reth"]
 exclude = ["docs/cli"]
@@ -327,6 +330,9 @@ dilithium = { path = "../ml-lattice-rs/dilithium" }
 # Post-Quantum reth crates
 reth-pq-primitives = { path = "crates/pq/reth-pq-primitives", default-features = false }
 reth-pq-consensus = { path = "crates/pq/reth-pq-consensus", default-features = false }
+reth-pq-precompile = { path = "crates/pq/reth-pq-precompile", default-features = false }
+reth-pq-pool = { path = "crates/pq/reth-pq-pool", default-features = false }
+reth-pq-evm = { path = "crates/pq/reth-pq-evm", default-features = false }
 # reth
 reth = { path = "bin/reth" }
 reth-storage-rpc-provider = { path = "crates/storage/rpc-provider" }
@@ -446,6 +452,7 @@ reth-zstd-compressors = { path = "crates/storage/zstd-compressors", default-feat
 
 # revm
 revm = { version = "34.0.0", default-features = false }
+revm-precompile = { version = "32.0.0", default-features = false }
 revm-bytecode = { version = "8.0.0", default-features = false }
 revm-database = { version = "10.0.0", default-features = false }
 revm-state = { version = "9.0.0", default-features = false }

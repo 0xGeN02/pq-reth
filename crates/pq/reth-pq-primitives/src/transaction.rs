@@ -27,7 +27,7 @@ pub const PQ_TX_TYPE: u8 = 0x04;
 ///
 /// Structurally equivalent to an EIP-1559 transaction but with `chain_id`
 /// mandatory (replay protection) and the signature replaced by ML-DSA-65.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PqTransactionRequest {
     /// Sender nonce — prevents replay attacks.
     pub nonce: u64,
@@ -77,7 +77,7 @@ impl PqTransactionRequest {
 /// Contains the original unsigned fields, the ML-DSA-65 signature, and the
 /// signer's public key (needed for sender recovery, since ML-DSA signatures
 /// are not recoverable like ECDSA).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PqSignedTransaction {
     /// Unsigned transaction request.
     pub tx: PqTransactionRequest,
@@ -86,7 +86,7 @@ pub struct PqSignedTransaction {
     /// Signer's ML-DSA-65 public key.
     pub public_key: PqPublicKey,
     /// Cached transaction hash (keccak256 of the full signed encoding).
-    hash: B256,
+    pub hash: B256,
 }
 
 impl PqSignedTransaction {

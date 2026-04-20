@@ -34,11 +34,13 @@
 //! ```
 
 pub mod error;
+pub mod rlp;
 pub mod signature;
-pub mod transaction;
+pub mod signed_tx_impl;
 pub mod signer;
+pub mod transaction;
 
 pub use error::PqError;
 pub use signature::{PqPublicKey, PqSignature};
-pub use transaction::{PqSignedTransaction, PqTransactionRequest};
 pub use signer::PqSigner;
+pub use transaction::{PqSignedTransaction, PqTransactionRequest, PQ_TX_TYPE};

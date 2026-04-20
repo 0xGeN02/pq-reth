@@ -1,0 +1,35 @@
+[package]
+name = "reth-pq-pool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Post-quantum transaction pool integration for pq-reth"
+
+[lints]
+workspace = true
+
+[dependencies]
+reth-pq-primitives = { workspace = true }
+reth-transaction-pool = { workspace = true }
+reth-primitives-traits = { workspace = true }
+reth-ethereum-primitives = { workspace = true }
+
+alloy-primitives = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "reth-pq-primitives/std",
+    "alloy-primitives/std",
+    "alloy-consensus/std",
+    "alloy-eips/std",
+    "serde/std",
+    "thiserror/std",
+]
