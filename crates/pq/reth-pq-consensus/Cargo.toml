@@ -1,0 +1,33 @@
+[package]
+name = "reth-pq-consensus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Post-quantum consensus validation for the pq-reth Ethereum client"
+
+[lints]
+workspace = true
+
+[dependencies]
+reth-pq-primitives = { workspace = true }
+
+# Reth consensus trait
+reth-consensus = { workspace = true }
+
+# Alloy types
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-consensus = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "reth-pq-primitives/std",
+    "alloy-primitives/std",
+    "alloy-consensus/std",
+    "thiserror/std",
+]

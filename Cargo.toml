@@ -155,6 +155,9 @@ members = [
     "testing/testing-utils",
     "testing/runner",
     "crates/tracing-otlp",
+    # Post-Quantum EVM extensions
+    "crates/pq/reth-pq-primitives",
+    "crates/pq/reth-pq-consensus",
 ]
 default-members = ["bin/reth"]
 exclude = ["docs/cli"]
@@ -318,6 +321,12 @@ codegen-units = 1
 incremental = false
 
 [workspace.dependencies]
+# Post-Quantum crypto library (ml-lattice-rs)
+kyber = { path = "../ml-lattice-rs/kyber" }
+dilithium = { path = "../ml-lattice-rs/dilithium" }
+# Post-Quantum reth crates
+reth-pq-primitives = { path = "crates/pq/reth-pq-primitives", default-features = false }
+reth-pq-consensus = { path = "crates/pq/reth-pq-consensus", default-features = false }
 # reth
 reth = { path = "bin/reth" }
 reth-storage-rpc-provider = { path = "crates/storage/rpc-provider" }
