@@ -24,9 +24,12 @@
 //! - `PqNetworkBuilder`: **complete**
 //! - `PqEngineTypes`: **complete**
 //! - `PqBuiltPayload` + conversions: **complete**
-//! - `Node<N>` wiring: **pending** (requires PQ payload builder)
+//! - `PqPayloadBuilder`: **complete**
+//! - `Node<N>` wiring: **complete**
 
 extern crate alloc;
+
+pub mod payload;
 
 use alloc::sync::Arc;
 
@@ -48,9 +51,12 @@ use reth_evm::ConfigureEvm;
 use reth_network::{primitives::BasicNetworkPrimitives, NetworkHandle, PeersInfo};
 use reth_node_api::{FullNodeTypes, NodePrimitives, PrimitivesTy, TxTy};
 use reth_node_builder::{
-    components::{ConsensusBuilder, NetworkBuilder, PoolBuilder},
-    node::NodeTypes,
-    BuilderContext,
+    components::{
+        BasicPayloadServiceBuilder, ComponentsBuilder, ConsensusBuilder, NetworkBuilder,
+        PoolBuilder,
+    },
+    node::{Node, NodeTypes},
+    BuilderContext, PayloadBuilderConfig,
 };
 use reth_payload_primitives::{BuiltPayload, PayloadTypes};
 use reth_pq_node_primitives::PqPrimitives;
@@ -264,8 +270,8 @@ impl EngineTypes for PqEngineTypes {
 /// Implements [`NodeTypes`] with `Primitives = PqPrimitives` and
 /// `Payload = PqEngineTypes`.
 ///
-/// The full `Node<N>` impl is pending — it requires a PQ payload builder.
-/// Block execution can be tested directly via [`PqEvmConfig`].
+/// Also implements [`Node<N>`] which provides the full component builder
+/// and add-ons for launching a PQ node.
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub struct PqNode;
@@ -275,6 +281,36 @@ impl NodeTypes for PqNode {
     type ChainSpec = ChainSpec;
     type Storage = EthStorage;
     type Payload = PqEngineTypes;
+}
+
+impl<N> Node<N> for PqNode
+where
+    N: FullNodeTypes<Types = Self>,
+{
+    type ComponentsBuilder = ComponentsBuilder<
+        N,
+        PqPoolBuilder,
+        BasicPayloadServiceBuilder<PqPayloadBuilderComponent>,
+        PqNetworkBuilder,
+        PqExecutorBuilder,
+        PqConsensusBuilder,
+    >;
+
+    // No RPC or engine API add-ons for now — block execution works without them.
+    // Phase 4 (RPC) will add proper PqAddOns.
+    type AddOns = ();
+
+    fn components_builder(&self) -> Self::ComponentsBuilder {
+        ComponentsBuilder::default()
+            .node_types::<N>()
+            .executor(PqExecutorBuilder::default())
+            .consensus(PqConsensusBuilder)
+            .pool(PqPoolBuilder)
+            .payload(BasicPayloadServiceBuilder::new(PqPayloadBuilderComponent))
+            .network(PqNetworkBuilder)
+    }
+
+    fn add_ons(&self) -> Self::AddOns {}
 }
 
 // ─── PqPoolBuilder ───────────────────────────────────────────────────────────
@@ -391,5 +427,55 @@ where
 
     async fn build_consensus(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::Consensus> {
         Ok(Arc::new(EthBeaconConsensus::new(ctx.chain_spec())))
+    }
+}
+
+// ─── PqPayloadBuilderComponent ───────────────────────────────────────────────
+
+/// Payload builder component for the PQ node.
+///
+/// Implements [`PayloadBuilderBuilder`] — constructs a [`PqPayloadBuilder`]
+/// that builds blocks containing PQ (ML-DSA-65) transactions.
+///
+/// Designed to be used with [`BasicPayloadServiceBuilder`]:
+/// ```ignore
+/// BasicPayloadServiceBuilder::new(PqPayloadBuilderComponent)
+/// ```
+#[derive(Debug, Default, Clone, Copy)]
+#[non_exhaustive]
+pub struct PqPayloadBuilderComponent;
+
+impl<Node, Pool> reth_node_builder::components::PayloadBuilderBuilder<Node, Pool, PqEvmConfig>
+    for PqPayloadBuilderComponent
+where
+    Node: FullNodeTypes<
+        Types: NodeTypes<
+            ChainSpec: EthereumHardforks,
+            Primitives = PqPrimitives,
+            Payload = PqEngineTypes,
+        >,
+    >,
+    Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TxTy<Node::Types>>>
+        + Unpin
+        + 'static,
+{
+    type PayloadBuilder = payload::PqPayloadBuilder<Pool, Node::Provider, PqEvmConfig>;
+
+    async fn build_payload_builder(
+        self,
+        ctx: &BuilderContext<Node>,
+        pool: Pool,
+        evm_config: PqEvmConfig,
+    ) -> eyre::Result<Self::PayloadBuilder> {
+        let conf = ctx.payload_builder_config();
+        let chain = ctx.chain_spec().chain();
+        let gas_limit = Some(conf.gas_limit_for(chain));
+
+        Ok(payload::PqPayloadBuilder::new(
+            ctx.provider().clone(),
+            pool,
+            evm_config,
+            gas_limit,
+        ))
     }
 }

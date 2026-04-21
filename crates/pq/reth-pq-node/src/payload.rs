@@ -1,0 +1,267 @@
+//! Post-quantum payload builder.
+//!
+//! Provides [`PqPayloadBuilder`] — a [`PayloadBuilder`] that creates blocks
+//! containing PQ (ML-DSA-65) signed transactions, mirroring the Ethereum
+//! payload builder but without blob handling.
+
+use alloy_consensus::Transaction;
+use alloy_primitives::U256;
+use reth_basic_payload_builder::{
+    is_better_payload, BuildArguments, BuildOutcome, MissingPayloadBehaviour, PayloadBuilder,
+    PayloadConfig,
+};
+use reth_chainspec::{ChainSpecProvider, EthereumHardforks};
+use reth_errors::BlockExecutionError;
+use reth_evm::{
+    execute::{BlockBuilder, BlockBuilderOutcome},
+    ConfigureEvm, Evm, NextBlockEnvAttributes,
+};
+use reth_payload_builder_primitives::PayloadBuilderError;
+use reth_payload_primitives::PayloadBuilderAttributes;
+use reth_pq_node_primitives::PqPrimitives;
+use reth_pq_primitives::PqSignedTransaction;
+use reth_revm::{database::StateProviderDatabase, db::State};
+use reth_storage_api::StateProviderFactory;
+use reth_transaction_pool::{
+    error::InvalidPoolTransactionError, BestTransactions, BestTransactionsAttributes,
+    PoolTransaction, TransactionPool, ValidPoolTransaction,
+};
+use revm::context_interface::Block as _;
+use std::sync::Arc;
+use tracing::{debug, trace, warn};
+
+use crate::{PqBuiltPayload, PqEvmConfig};
+use reth_ethereum_engine_primitives::{EthBuiltPayload, EthPayloadBuilderAttributes};
+
+type BestTransactionsIter<Pool> = Box<
+    dyn BestTransactions<Item = Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>,
+>;
+
+/// Post-quantum payload builder.
+///
+/// Mirrors [`EthereumPayloadBuilder`] but:
+/// - Uses `PqPrimitives` instead of `EthPrimitives`
+/// - Uses `PqSignedTransaction` instead of `TransactionSigned`
+/// - Produces `PqBuiltPayload` instead of `EthBuiltPayload`
+/// - No blob handling (PQ transactions never carry blobs)
+///
+/// [`EthereumPayloadBuilder`]: reth_ethereum_payload_builder::EthereumPayloadBuilder
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PqPayloadBuilder<Pool, Client, EvmConfig = PqEvmConfig> {
+    /// Client providing access to node state.
+    client: Client,
+    /// Transaction pool.
+    pool: Pool,
+    /// EVM configuration.
+    evm_config: EvmConfig,
+    /// Desired gas limit for blocks.
+    gas_limit: Option<u64>,
+}
+
+impl<Pool, Client, EvmConfig> PqPayloadBuilder<Pool, Client, EvmConfig> {
+    /// Creates a new PQ payload builder.
+    pub const fn new(
+        client: Client,
+        pool: Pool,
+        evm_config: EvmConfig,
+        gas_limit: Option<u64>,
+    ) -> Self {
+        Self { client, pool, evm_config, gas_limit }
+    }
+}
+
+impl<Pool, Client, EvmConfig> PayloadBuilder for PqPayloadBuilder<Pool, Client, EvmConfig>
+where
+    EvmConfig: ConfigureEvm<Primitives = PqPrimitives, NextBlockEnvCtx = NextBlockEnvAttributes>,
+    Client: StateProviderFactory + ChainSpecProvider<ChainSpec: EthereumHardforks> + Clone,
+    Pool: TransactionPool<Transaction: PoolTransaction<Consensus = PqSignedTransaction>>,
+{
+    type Attributes = EthPayloadBuilderAttributes;
+    type BuiltPayload = PqBuiltPayload;
+
+    fn try_build(
+        &self,
+        args: BuildArguments<Self::Attributes, Self::BuiltPayload>,
+    ) -> Result<BuildOutcome<Self::BuiltPayload>, PayloadBuilderError> {
+        build_pq_payload(
+            self.evm_config.clone(),
+            self.client.clone(),
+            self.pool.clone(),
+            self.gas_limit,
+            args,
+            |attributes| self.pool.best_transactions_with_attributes(attributes),
+        )
+    }
+
+    fn on_missing_payload(
+        &self,
+        _args: BuildArguments<Self::Attributes, Self::BuiltPayload>,
+    ) -> MissingPayloadBehaviour<Self::BuiltPayload> {
+        MissingPayloadBehaviour::RaceEmptyPayload
+    }
+
+    fn build_empty_payload(
+        &self,
+        config: PayloadConfig<Self::Attributes>,
+    ) -> Result<Self::BuiltPayload, PayloadBuilderError> {
+        let args = BuildArguments::new(Default::default(), config, Default::default(), None);
+
+        build_pq_payload(
+            self.evm_config.clone(),
+            self.client.clone(),
+            self.pool.clone(),
+            self.gas_limit,
+            args,
+            |attributes| self.pool.best_transactions_with_attributes(attributes),
+        )?
+        .into_payload()
+        .ok_or_else(|| PayloadBuilderError::MissingPayload)
+    }
+}
+
+/// Constructs a PQ block payload using the best transactions from the pool.
+///
+/// Simplified version of the Ethereum payload builder:
+/// - No blob handling (PQ transactions never carry blobs)
+/// - No EIP-4844/EIP-7594 sidecar logic
+/// - Otherwise follows the same pattern: state → builder → execute txs → finish
+#[inline]
+fn build_pq_payload<EvmConfig, Client, Pool, F>(
+    evm_config: EvmConfig,
+    client: Client,
+    _pool: Pool,
+    gas_limit: Option<u64>,
+    args: BuildArguments<EthPayloadBuilderAttributes, PqBuiltPayload>,
+    best_txs: F,
+) -> Result<BuildOutcome<PqBuiltPayload>, PayloadBuilderError>
+where
+    EvmConfig: ConfigureEvm<Primitives = PqPrimitives, NextBlockEnvCtx = NextBlockEnvAttributes>,
+    Client: StateProviderFactory + ChainSpecProvider<ChainSpec: EthereumHardforks>,
+    Pool: TransactionPool<Transaction: PoolTransaction<Consensus = PqSignedTransaction>>,
+    F: FnOnce(BestTransactionsAttributes) -> BestTransactionsIter<Pool>,
+{
+    let BuildArguments { mut cached_reads, config, cancel, best_payload } = args;
+    let PayloadConfig { parent_header, attributes } = config;
+
+    let state_provider = client.state_by_block_hash(parent_header.hash())?;
+    let state = StateProviderDatabase::new(state_provider.as_ref());
+    let mut db =
+        State::builder().with_database(cached_reads.as_db_mut(state)).with_bundle_update().build();
+
+    let effective_gas_limit = gas_limit.unwrap_or(parent_header.gas_limit);
+
+    let mut builder = evm_config
+        .builder_for_next_block(
+            &mut db,
+            &parent_header,
+            NextBlockEnvAttributes {
+                timestamp: attributes.timestamp(),
+                suggested_fee_recipient: attributes.suggested_fee_recipient(),
+                prev_randao: attributes.prev_randao(),
+                gas_limit: effective_gas_limit,
+                parent_beacon_block_root: attributes.parent_beacon_block_root(),
+                withdrawals: Some(attributes.withdrawals().clone()),
+                extra_data: Default::default(),
+            },
+        )
+        .map_err(PayloadBuilderError::other)?;
+
+    debug!(
+        target: "payload_builder",
+        id=%attributes.id,
+        parent_header = ?parent_header.hash(),
+        parent_number = parent_header.number,
+        "building new PQ payload"
+    );
+
+    let mut cumulative_gas_used = 0;
+    let block_gas_limit: u64 = builder.evm_mut().block().gas_limit();
+    let base_fee = builder.evm_mut().block().basefee();
+
+    let mut best_txs = best_txs(BestTransactionsAttributes::new(base_fee, None));
+    let mut total_fees = U256::ZERO;
+
+    builder.apply_pre_execution_changes().map_err(|err| {
+        warn!(target: "payload_builder", %err, "failed to apply pre-execution changes");
+        PayloadBuilderError::Internal(err.into())
+    })?;
+
+    while let Some(pool_tx) = best_txs.next() {
+        // Gas limit check
+        if cumulative_gas_used + pool_tx.gas_limit() > block_gas_limit {
+            best_txs.mark_invalid(
+                &pool_tx,
+                &InvalidPoolTransactionError::ExceedsGasLimit(pool_tx.gas_limit(), block_gas_limit),
+            );
+            continue;
+        }
+
+        // Cancellation check
+        if cancel.is_cancelled() {
+            return Ok(BuildOutcome::Cancelled);
+        }
+
+        // Convert to consensus transaction
+        let tx = pool_tx.to_consensus();
+
+        // Execute the transaction
+        let gas_used = match builder.execute_transaction(tx.clone()) {
+            Ok(gas_used) => gas_used,
+            Err(BlockExecutionError::Validation(
+                reth_errors::BlockValidationError::InvalidTx { error, .. },
+            )) => {
+                if error.is_nonce_too_low() {
+                    trace!(target: "payload_builder", %error, ?tx, "skipping nonce too low transaction");
+                } else {
+                    trace!(target: "payload_builder", %error, ?tx, "skipping invalid transaction and its descendants");
+                    best_txs.mark_invalid(
+                        &pool_tx,
+                        &InvalidPoolTransactionError::Consensus(
+                            reth_primitives_traits::transaction::error::InvalidTransactionError::TxTypeNotSupported,
+                        ),
+                    );
+                }
+                continue;
+            }
+            // Fatal error
+            Err(err) => return Err(PayloadBuilderError::evm(err)),
+        };
+
+        // Update fees
+        let miner_fee =
+            tx.effective_tip_per_gas(base_fee).expect("fee is always valid; execution succeeded");
+        total_fees += U256::from(miner_fee) * U256::from(gas_used);
+        cumulative_gas_used += gas_used;
+    }
+
+    // Check if we have a better block
+    if !is_better_payload(best_payload.as_ref(), total_fees) {
+        drop(builder);
+        return Ok(BuildOutcome::Aborted { fees: total_fees, cached_reads });
+    }
+
+    let BlockBuilderOutcome { execution_result, block, .. } =
+        builder.finish(state_provider.as_ref())?;
+
+    let chain_spec = client.chain_spec();
+    let requests = chain_spec
+        .is_prague_active_at_timestamp(attributes.timestamp)
+        .then_some(execution_result.requests);
+
+    let sealed_block = Arc::new(block.sealed_block().clone());
+    debug!(
+        target: "payload_builder",
+        id=%attributes.id,
+        sealed_block_header = ?sealed_block.sealed_header(),
+        "sealed built PQ block"
+    );
+
+    let payload = PqBuiltPayload::new(EthBuiltPayload::new(
+        attributes.id,
+        sealed_block,
+        total_fees,
+        requests,
+    ));
+
+    Ok(BuildOutcome::Better { payload, cached_reads })
+}

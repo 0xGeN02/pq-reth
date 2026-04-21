@@ -13,7 +13,7 @@ for key encapsulation. No backward compatibility with classic transactions.
 |-------|-------------|--------|
 | 1 | NodePrimitives (`PqPrimitives`) | **Complete** |
 | 2 | DB Compact codec | **Complete** |
-| 3 | Block execution (EVM config, receipt builder, node types) | **Complete** (core) |
+| 3 | Block execution (EVM config, receipt builder, node types, payload builder) | **Complete** |
 | 4 | RPC layer | Pending |
 | 5 | P2P networking | Pending |
 | 6 | Sender recovery | Pending |
@@ -355,7 +355,7 @@ Top-level node definition that wires all PQ components together.
 
 ### `PqNode`
 
-Implements `NodeTypes`:
+Implements `NodeTypes` and `Node<N>` — the complete node definition:
 
 ```rust
 impl NodeTypes for PqNode {
@@ -365,6 +365,14 @@ impl NodeTypes for PqNode {
     type Payload = PqEngineTypes;
 }
 ```
+
+The `Node<N>` impl wires all components via `ComponentsBuilder`:
+- **Executor**: `PqExecutorBuilder` (PqEvmConfig with ML-DSA precompile)
+- **Consensus**: `PqConsensusBuilder` (EthBeaconConsensus)
+- **Pool**: `PqPoolBuilder` (PqPoolValidator + CoinbaseTipOrdering)
+- **Payload**: `BasicPayloadServiceBuilder<PqPayloadBuilderComponent>`
+- **Network**: `PqNetworkBuilder` (standard Ethereum P2P)
+- **AddOns**: `()` (no RPC/engine API yet — Phase 4)
 
 ### `PqEngineTypes`
 
@@ -379,6 +387,16 @@ conversions to all `ExecutionPayloadEnvelope*` types (V1-V6). Required due to
 Rust's orphan rules — can't implement foreign traits on foreign generic types.
 
 PQ transactions have no blob sidecars, so blob bundles are always empty.
+
+### `PqPayloadBuilder`
+
+Block payload builder that:
+1. Pulls best transactions from the pool
+2. Executes them via `PqEvmConfig`
+3. Produces `PqBuiltPayload` instances
+4. No blob handling (PQ transactions never carry blobs)
+
+Used via `BasicPayloadServiceBuilder<PqPayloadBuilderComponent>`.
 
 ### `PqPoolBuilder`
 
@@ -403,12 +421,14 @@ transaction-type agnostic at this layer.
 ### Status
 
 - `NodeTypes` impl: **complete**
+- `Node<N>` impl: **complete**
 - `PqPoolBuilder`: **complete**
 - `PqEngineTypes` + `PqBuiltPayload`: **complete**
+- `PqPayloadBuilder`: **complete**
 - `PqExecutorBuilder`: **complete** (in `reth-pq-evm`)
 - `PqConsensusBuilder`: **complete**
 - `PqNetworkBuilder`: **complete**
-- `Node<N>` wiring: **pending** — requires PQ payload builder
+- `PqAddOns` (RPC): **pending** — Phase 4
 
 ---
 
@@ -419,10 +439,13 @@ cd pq-reth
 cargo test -p reth-pq-primitives \
            -p reth-pq-consensus  \
            -p reth-pq-precompile \
-           -p reth-pq-pool
+           -p reth-pq-pool       \
+           -p reth-pq-evm        \
+           -p reth-pq-node-primitives \
+           -p reth-pq-node
 ```
 
-Expected result: **~24 tests, 0 failures**.
+Expected result: **~18 tests, 0 failures**.
 
 ---
 

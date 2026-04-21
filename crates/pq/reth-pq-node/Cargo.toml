@@ -18,25 +18,33 @@ reth-pq-evm             = { workspace = true }
 reth-pq-pool            = { workspace = true }
 
 # reth
-reth-chainspec           = { workspace = true }
-reth-ethereum-forks      = { workspace = true }
-reth-ethereum-consensus  = { workspace = true }
+reth-basic-payload-builder      = { workspace = true }
+reth-chainspec                  = { workspace = true }
+reth-engine-primitives          = { workspace = true }
+reth-errors                     = { workspace = true }
+reth-ethereum-consensus         = { workspace = true }
 reth-ethereum-engine-primitives = { workspace = true }
-reth-engine-primitives   = { workspace = true }
-reth-node-api            = { workspace = true }
-reth-node-builder        = { workspace = true }
-reth-primitives-traits   = { workspace = true }
-reth-provider            = { workspace = true }
-reth-transaction-pool    = { workspace = true }
-reth-network             = { workspace = true }
-reth-payload-primitives  = { workspace = true }
-reth-evm                 = { workspace = true }
+reth-ethereum-forks             = { workspace = true }
+reth-evm                        = { workspace = true }
+reth-network                    = { workspace = true }
+reth-node-api                   = { workspace = true }
+reth-node-builder               = { workspace = true }
+reth-payload-builder-primitives = { workspace = true }
+reth-payload-primitives         = { workspace = true }
+reth-primitives-traits          = { workspace = true }
+reth-provider                   = { workspace = true }
+reth-revm                       = { workspace = true }
+reth-storage-api                = { workspace = true }
+reth-transaction-pool           = { workspace = true }
 
 # alloy
 alloy-consensus          = { workspace = true }
 alloy-eips               = { workspace = true }
 alloy-primitives         = { workspace = true }
 alloy-rpc-types-engine   = { workspace = true }
+
+# revm
+revm                     = { workspace = true }
 
 # misc
 eyre                     = { workspace = true }
