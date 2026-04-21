@@ -9678,17 +9678,46 @@ dependencies = [
 name = "reth-pq-evm"
 version = "1.11.1"
 dependencies = [
+ "alloy-consensus",
  "alloy-evm",
  "alloy-primitives",
  "eyre",
  "reth-chainspec",
+ "reth-ethereum-forks",
  "reth-ethereum-primitives",
+ "reth-evm",
  "reth-evm-ethereum",
  "reth-node-api",
  "reth-node-builder",
+ "reth-pq-node-primitives",
  "reth-pq-precompile",
+ "reth-pq-primitives",
  "reth-primitives-traits",
  "revm-precompile",
+]
+
+[[package]]
+name = "reth-pq-node"
+version = "1.11.1"
+dependencies = [
+ "alloy-rpc-types-engine",
+ "eyre",
+ "reth-chainspec",
+ "reth-ethereum-consensus",
+ "reth-ethereum-engine-primitives",
+ "reth-ethereum-forks",
+ "reth-network",
+ "reth-node-api",
+ "reth-node-builder",
+ "reth-payload-primitives",
+ "reth-pq-evm",
+ "reth-pq-node-primitives",
+ "reth-pq-primitives",
+ "reth-primitives-traits",
+ "reth-provider",
+ "reth-transaction-pool",
+ "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -9734,6 +9763,7 @@ version = "1.11.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
+ "alloy-evm",
  "alloy-primitives",
  "alloy-rlp",
  "bytes",

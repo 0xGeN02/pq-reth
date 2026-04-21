@@ -1,0 +1,42 @@
+[package]
+name = "reth-pq-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Post-quantum Ethereum node — PqNode type and component builders"
+
+[lints]
+workspace = true
+
+[dependencies]
+# PQ crates
+reth-pq-primitives      = { workspace = true }
+reth-pq-node-primitives = { workspace = true }
+reth-pq-evm             = { workspace = true }
+
+# reth
+reth-chainspec           = { workspace = true }
+reth-ethereum-forks      = { workspace = true }
+reth-ethereum-consensus  = { workspace = true }
+reth-ethereum-engine-primitives = { workspace = true }
+reth-node-api            = { workspace = true }
+reth-node-builder        = { workspace = true }
+reth-primitives-traits   = { workspace = true }
+reth-provider            = { workspace = true }
+reth-transaction-pool    = { workspace = true }
+reth-network             = { workspace = true }
+reth-payload-primitives  = { workspace = true }
+
+# alloy
+alloy-rpc-types-engine   = { workspace = true }
+
+# misc
+eyre                     = { workspace = true }
+tracing                  = { workspace = true }
+serde                    = { workspace = true }
+
+[features]
+default = ["std"]
+std = []
