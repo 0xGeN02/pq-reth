@@ -14,7 +14,6 @@ workspace = true
 reth-pq-primitives = { workspace = true }
 reth-transaction-pool = { workspace = true }
 reth-primitives-traits = { workspace = true }
-reth-ethereum-primitives = { workspace = true }
 
 alloy-primitives = { workspace = true }
 alloy-consensus = { workspace = true }

@@ -42,10 +42,10 @@ pq-reth/crates/pq/
 ├── reth-pq-primitives/       ← base types: PqSignedTransaction, PqSigner, RLP, Compact, TxEnv
 ├── reth-pq-consensus/        ← PQ transaction validation
 ├── reth-pq-precompile/       ← ML-DSA verify precompile at 0x0100
-├── reth-pq-pool/             ← mempool integration
+├── reth-pq-pool/             ← mempool integration (PqPooledTransaction, PqPoolValidator)
 ├── reth-pq-evm/              ← PqEvmFactory, PqEvmConfig, PqReceiptBuilder, PqExecutorBuilder
 ├── reth-pq-node-primitives/  ← PqPrimitives (NodePrimitives impl)
-└── reth-pq-node/             ← PqNode (NodeTypes), consensus/network builders
+└── reth-pq-node/             ← PqNode, PqEngineTypes, PqPoolBuilder, PqBuiltPayload, builders
 ```
 
 ---
@@ -362,14 +362,33 @@ impl NodeTypes for PqNode {
     type Primitives = PqPrimitives;
     type ChainSpec = ChainSpec;
     type Storage = EthStorage;
-    type Payload = PqPayloadTypes;
+    type Payload = PqEngineTypes;
 }
 ```
+
+### `PqEngineTypes`
+
+Full `EngineTypes` implementation using standard Ethereum execution payload
+envelopes. Works because `from_block_unchecked` only requires `T: Encodable2718`
+and `PqSignedTransaction` implements it.
+
+### `PqBuiltPayload`
+
+Newtype wrapper around `EthBuiltPayload<PqPrimitives>` with `From`/`TryInto`
+conversions to all `ExecutionPayloadEnvelope*` types (V1-V6). Required due to
+Rust's orphan rules — can't implement foreign traits on foreign generic types.
+
+PQ transactions have no blob sidecars, so blob bundles are always empty.
+
+### `PqPoolBuilder`
+
+`PoolBuilder` that creates a `Pool<PqPoolValidator, CoinbaseTipOrdering, DiskFileBlobStore>`.
+Uses ML-DSA-65 signature verification via `PqPoolValidator`.
 
 ### `PqPayloadTypes`
 
 Payload types reusing Ethereum payload attributes (signature-agnostic) with
-`EthBuiltPayload<PqPrimitives>` for built payloads.
+`PqBuiltPayload` as the built payload type.
 
 ### `PqConsensusBuilder`
 
@@ -384,11 +403,12 @@ transaction-type agnostic at this layer.
 ### Status
 
 - `NodeTypes` impl: **complete**
+- `PqPoolBuilder`: **complete**
+- `PqEngineTypes` + `PqBuiltPayload`: **complete**
 - `PqExecutorBuilder`: **complete** (in `reth-pq-evm`)
 - `PqConsensusBuilder`: **complete**
 - `PqNetworkBuilder`: **complete**
-- `Node<N>` wiring: **pending** — requires PQ-specific transaction pool and
-  payload builder
+- `Node<N>` wiring: **pending** — requires PQ payload builder
 
 ---
 

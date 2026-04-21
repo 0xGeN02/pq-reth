@@ -5,7 +5,7 @@
 
 use alloy_consensus::{transaction::Recovered, Transaction};
 use alloy_eips::{
-    eip2718::{Encodable2718, Typed2718},
+    eip2718::Encodable2718,
     eip4844::{env_settings::KzgSettings, BlobTransactionValidationError},
     eip7594::BlobTransactionSidecarVariant,
 };
@@ -14,8 +14,6 @@ use reth_pq_primitives::{PqSignedTransaction, PQ_TX_TYPE};
 use reth_primitives_traits::InMemorySize;
 use reth_transaction_pool::{EthBlobTransactionSidecar, EthPoolTransaction, PoolTransaction};
 use std::{convert::Infallible, fmt, sync::Arc};
-
-use crate::error::PqPoolError;
 
 // ─── PqPooledTransaction ─────────────────────────────────────────────────────
 

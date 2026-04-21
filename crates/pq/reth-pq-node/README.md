@@ -13,14 +13,36 @@ impl NodeTypes for PqNode {
     type Primitives = PqPrimitives;
     type ChainSpec = ChainSpec;
     type Storage = EthStorage;
-    type Payload = PqPayloadTypes;
+    type Payload = PqEngineTypes;
 }
 ```
 
+### `PqEngineTypes`
+
+Full `EngineTypes` implementation. Uses standard Ethereum execution payload
+envelope types (V1-V6). Works because `from_block_unchecked` only requires
+`T: Encodable2718 + Transaction`, both implemented by `PqSignedTransaction`.
+
+### `PqBuiltPayload`
+
+Newtype wrapper around `EthBuiltPayload<PqPrimitives>`. Provides
+`From`/`TryInto` conversions to all `ExecutionPayloadEnvelope*` types.
+Required due to orphan rules (can't add foreign trait impls on foreign
+generic types).
+
+PQ transactions have no blob sidecars — blob bundles are always empty.
+
+### `PqPoolBuilder`
+
+`PoolBuilder<Node, Evm>` that creates a transaction pool with:
+- `PqPoolValidator` — ML-DSA-65 signature verification
+- `CoinbaseTipOrdering<PqPooledTransaction>` — transaction ordering
+- `DiskFileBlobStore` — no-op blob store (PQ txs have no blobs)
+
 ### `PqPayloadTypes`
 
-`PayloadTypes` impl reusing Ethereum payload attributes (signature-agnostic)
-with `EthBuiltPayload<PqPrimitives>`.
+`PayloadTypes` impl with `BuiltPayload = PqBuiltPayload`. Reuses Ethereum
+payload attributes (signature-agnostic).
 
 ### `PqConsensusBuilder`
 
@@ -36,6 +58,8 @@ rules (gas, timestamp, etc.) are signature-type agnostic.
 | Component | Status |
 |-----------|--------|
 | `NodeTypes` impl | Complete |
+| `PqPoolBuilder` | Complete |
+| `PqEngineTypes` + `PqBuiltPayload` | Complete |
 | `PqConsensusBuilder` | Complete |
 | `PqNetworkBuilder` | Complete |
 | `PqExecutorBuilder` | Complete (in `reth-pq-evm`) |
@@ -44,12 +68,16 @@ rules (gas, timestamp, etc.) are signature-type agnostic.
 ### Pending: `Node<N>` trait impl
 
 Requires:
-1. **PQ transaction pool** — `EthTransactionPool` is hardcoded to
-   `TransactionSigned` via `EthPooledTransaction`
-2. **PQ payload builder** — needs `EngineTypes` with
-   `TryInto<ExecutionPayloadEnvelope*>` conversions
-3. **`EngineTypes` impl** — `EthEngineTypes` hardcodes
-   `BuiltPayload::Primitives::Block = reth_ethereum_primitives::Block`
+1. **PQ payload builder** — `EthereumPayloadBuilder` is hardcoded to
+   `Primitives = EthPrimitives`
+2. **`EngineTypes` ↔ payload builder** — the payload builder must produce
+   `PqBuiltPayload` instances
+
+### Pending: `PqAddOns`
+
+`EthereumAddOns` hardcodes `Primitives = EthPrimitives`. Options:
+- Create `PqAddOns` wrapping `RpcAddOns` with PQ types
+- Use `()` (no RPC/engine API) for block execution testing
 
 ## Re-exports
 

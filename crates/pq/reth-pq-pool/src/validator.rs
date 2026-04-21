@@ -26,8 +26,8 @@ pub struct PqPoolValidator;
 
 impl TransactionValidator for PqPoolValidator {
     type Transaction = PqPooledTransaction;
-    /// Standard Ethereum block type — we don't use block context here.
-    type Block = reth_ethereum_primitives::Block;
+    /// PQ block type — `Block<PqSignedTransaction>`.
+    type Block = alloy_consensus::Block<PqSignedTransaction>;
 
     async fn validate_transaction(
         &self,
