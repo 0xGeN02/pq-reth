@@ -1,45 +1,63 @@
-# pq-reth — Migración Post-Cuántica del Cliente Ethereum
+# pq-reth — Post-Quantum Ethereum Client Migration
 
-Fork del cliente Ethereum [Reth](https://github.com/paradigmxyz/reth) extendido
-con criptografía post-cuántica completa. Añade soporte nativo para transacciones
-firmadas con **ML-DSA-65 (CRYSTALS-Dilithium)** sin modificar ningún crate
-upstream de Reth.
-
----
-
-## Filosofía de diseño
-
-- **Sin modificar código upstream.** Todos los cambios viven bajo
-  `crates/pq/` como crates nuevos dentro del workspace de Reth.
-- **Tipo de transacción `0x04`.** No colisiona con los tipos existentes
-  (`0x00` legacy, `0x01` EIP-2930, `0x02` EIP-1559, `0x03` EIP-4844).
-- **La clave pública viaja en la transacción.** ML-DSA no es recuperable como
-  ECDSA, así que el campo `public_key` forma parte del payload firmado.
-- **Derivación de address idéntica a ECDSA.** `address = keccak256(pk_bytes)[12..]`.
+Fork of the [Reth](https://github.com/paradigmxyz/reth) Ethereum client with
+**complete post-quantum cryptography**. Replaces ECDSA/secp256k1 entirely with
+**ML-DSA-65 (CRYSTALS-Dilithium)** for transaction signing and **ML-KEM (Kyber)**
+for key encapsulation. No backward compatibility with classic transactions.
 
 ---
 
-## Mapa de crates
+## Migration Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | NodePrimitives (`PqPrimitives`) | **Complete** |
+| 2 | DB Compact codec | **Complete** |
+| 3 | Block execution (EVM config, receipt builder, node types) | **Complete** (core) |
+| 4 | RPC layer | Pending |
+| 5 | P2P networking | Pending |
+| 6 | Sender recovery | Pending |
+| 7 | Deprecate ecrecover | Pending |
+
+---
+
+## Design Philosophy
+
+- **No upstream modifications.** All changes live under `crates/pq/` as new
+  crates within the Reth workspace.
+- **Total replacement, no backward compatibility.** Classic ECDSA transactions
+  are not supported. This simplifies the design significantly.
+- **Transaction type `0x04`.** Collides with EIP-7702 on Ethereum mainnet but
+  is acceptable since we don't support classic tx types.
+- **Public key in the transaction.** ML-DSA is not recoverable like ECDSA, so
+  the `public_key` field is part of the signed payload.
+- **Address derivation identical to ECDSA.** `address = keccak256(pk_bytes)[12..]`.
+
+---
+
+## Crate Map
 
 ```
 pq-reth/crates/pq/
-├── reth-pq-primitives/    ← tipos base: PqSignedTransaction, PqSigner, RLP
-├── reth-pq-consensus/     ← validación de transacciones PQ
-├── reth-pq-precompile/    ← precompile ML-DSA verify en dirección 0x0100
-├── reth-pq-pool/          ← integración con el mempool de Reth
-└── reth-pq-evm/           ← EVM factory con el precompile registrado
+├── reth-pq-primitives/       ← base types: PqSignedTransaction, PqSigner, RLP, Compact, TxEnv
+├── reth-pq-consensus/        ← PQ transaction validation
+├── reth-pq-precompile/       ← ML-DSA verify precompile at 0x0100
+├── reth-pq-pool/             ← mempool integration
+├── reth-pq-evm/              ← PqEvmFactory, PqEvmConfig, PqReceiptBuilder, PqExecutorBuilder
+├── reth-pq-node-primitives/  ← PqPrimitives (NodePrimitives impl)
+└── reth-pq-node/             ← PqNode (NodeTypes), consensus/network builders
 ```
 
 ---
 
 ## reth-pq-primitives
 
-El crate base. Define todos los tipos que el resto del stack necesita.
+The base crate. Defines all types that the rest of the stack needs.
 
-### Tipos principales
+### Core Types
 
 #### `PqTransactionRequest`
-Campos de una transacción PQ sin firmar:
+Unsigned PQ transaction fields:
 
 ```rust
 pub struct PqTransactionRequest {
@@ -48,25 +66,30 @@ pub struct PqTransactionRequest {
     pub value:     u128,
     pub gas_limit: u64,
     pub gas_price: u128,
-    pub input:     Vec<u8>,
+    pub input:     Bytes,            // alloy_primitives::Bytes
     pub chain_id:  u64,
 }
 ```
 
 #### `PqSignedTransaction`
-Transacción firmada. Incluye firma y clave pública:
+Signed transaction with ML-DSA-65 signature and public key:
 
 ```rust
 pub struct PqSignedTransaction {
     pub tx:         PqTransactionRequest,
     pub signature:  PqSignature,    // 3309 bytes — ML-DSA-65
     pub public_key: PqPublicKey,    // 1952 bytes — ML-DSA-65
-    pub hash:       B256,           // keccak256 del encoding completo
+    pub hash:       B256,           // keccak256 of the full signed encoding
 }
 ```
 
+#### `PqTxType`
+Transaction type marker implementing `Typed2718`. Used as
+`<PqSignedTransaction as TransactionEnvelope>::TxType`. Always returns
+`PQ_TX_TYPE = 0x04`.
+
 #### `PqSigner`
-Genera keypairs y firma transacciones:
+Generates ML-DSA-65 keypairs and signs transactions:
 
 ```rust
 let signer = PqSigner::generate();
@@ -76,31 +99,45 @@ let address = signer.address();
 
 ### Encoding EIP-2718
 
-Las transacciones PQ se codifican como:
+PQ transactions encode as:
 
 ```
 0x04 || RLP([nonce, to, value, gas_limit, gas_price, input, chain_id,
              signature_bytes, public_key_bytes])
 ```
 
-El campo `hash` de `PqSignedTransaction` es público para que el pool y otros
-componentes puedan referenciarlo directamente.
+The `hash` field of `PqSignedTransaction` is public so the pool and other
+components can reference it directly.
 
-### Traits implementados
+### Traits Implemented
 
-`PqSignedTransaction` implementa todos los traits que Reth espera de una
-transacción de primera clase:
+`PqSignedTransaction` implements all traits Reth expects from a first-class
+transaction type:
 
-| Trait | Módulo |
+| Trait | Source |
 |---|---|
 | `Encodable` / `Decodable` | `alloy-rlp` |
 | `Encodable2718` / `Decodable2718` | `alloy-eips` |
 | `Typed2718` / `IsTyped2718` | `alloy-eips` |
 | `SignerRecoverable` | `alloy-consensus` |
 | `Transaction` | `alloy-consensus` |
+| `TransactionEnvelope` | `alloy-consensus` |
 | `TxHashRef` | `alloy-consensus` |
 | `InMemorySize` | `reth-primitives-traits` |
 | `SignedTransaction` | `reth-primitives-traits` |
+| `Compact` (to/from) | `reth-codecs` |
+| `FromRecoveredTx` / `FromTxWithEncoded` → `TxEnv` | `alloy-evm` |
+
+### TxEnv Mapping (`tx_env.rs`)
+
+`FromRecoveredTx<PqSignedTransaction> for TxEnv` lives in this crate (orphan
+rules — `PqSignedTransaction` must be local). Maps all PQ fields to revm's
+`TxEnv`:
+- `nonce`, `gas_limit`, `gas_price` → direct mapping
+- `to` → `TxKind::Call` or `TxKind::Create`
+- `input` → `tx_env.data`
+- `value` → `U256::from(value)`
+- Caller derived from `recover_signer()`
 
 ### Tests (10/10)
 
@@ -232,12 +269,12 @@ let pool = Pool::new(
 
 ## reth-pq-evm
 
-Conecta el precompile ML-DSA con la máquina virtual.
+Full EVM configuration for post-quantum block execution.
 
 ### `PqEvmFactory`
 
-Implementa `EvmFactory` de `alloy-evm`. Construye EVMs con el conjunto de
-precompiles de Prague **más** el precompile ML-DSA-65 en `0x0100`:
+Implements `EvmFactory` from `alloy-evm`. Builds EVMs with Prague precompiles
+**plus** the ML-DSA-65 precompile at `0x0100`:
 
 ```rust
 pub fn pq_precompiles() -> &'static Precompiles {
@@ -254,29 +291,108 @@ pub fn pq_precompiles() -> &'static Precompiles {
 }
 ```
 
-### `PqExecutorBuilder`
+### `PqReceiptBuilder`
 
-Conecta `PqEvmFactory` con el node builder de Reth:
-
-```rust
-NodeBuilder::new(node_config)
-    .with_types::<EthereumNode>()
-    .with_components(
-        EthereumNode::components()
-            .executor(PqExecutorBuilder::default())
-    )
-    .with_add_ons(EthereumAddOns::default())
-    .launch()
-    .await?;
-```
+Implements `ReceiptBuilder<Transaction=PqSignedTransaction, Receipt=Receipt>`.
+Maps PQ transactions to `TxType::Eip7702` (byte 0x04) in alloy's receipt
+format — acceptable because we don't support classic Ethereum tx types.
 
 ### `PqEvmConfig`
 
-Alias de tipo para `EthEvmConfig<ChainSpec, PqEvmFactory>`.
+Full `ConfigureEvm` implementation with `Primitives = PqPrimitives`. **Not** a
+type alias — it's a standalone struct that wraps:
+- `EthBlockExecutorFactory<PqReceiptBuilder, Arc<C>, PqEvmFactory>` — block
+  execution
+- `EthBlockAssembler<C>` — block assembly (generic, reused from Ethereum)
+
+```rust
+let evm_config = PqEvmConfig::new(chain_spec);
+// evm_config.block_executor_factory() → ready for block execution
+// evm_config.block_assembler()        → ready for block assembly
+```
+
+### `PqExecutorBuilder`
+
+Wires `PqEvmConfig` into the node builder. Requires
+`Primitives = PqPrimitives` on the node type:
+
+```rust
+impl<Node> ExecutorBuilder<Node> for PqExecutorBuilder
+where
+    Node: FullNodeTypes<Types: NodeTypes<
+        ChainSpec = ChainSpec,
+        Primitives = PqPrimitives,
+    >>,
+{ ... }
+```
 
 ---
 
-## Ejecutar todos los tests PQ
+## reth-pq-node-primitives
+
+Defines `PqPrimitives` — the `NodePrimitives` implementation for the PQ chain.
+
+```rust
+pub struct PqPrimitives;
+
+impl NodePrimitives for PqPrimitives {
+    type Block = Block<PqSignedTransaction>;
+    type BlockHeader = Header;
+    type BlockBody = BlockBody<PqSignedTransaction>;
+    type SignedTx = PqSignedTransaction;
+    type Receipt = Receipt;
+}
+```
+
+All downstream crates (`reth-pq-evm`, `reth-pq-node`) are parameterized over
+`PqPrimitives` instead of `EthPrimitives`.
+
+---
+
+## reth-pq-node
+
+Top-level node definition that wires all PQ components together.
+
+### `PqNode`
+
+Implements `NodeTypes`:
+
+```rust
+impl NodeTypes for PqNode {
+    type Primitives = PqPrimitives;
+    type ChainSpec = ChainSpec;
+    type Storage = EthStorage;
+    type Payload = PqPayloadTypes;
+}
+```
+
+### `PqPayloadTypes`
+
+Payload types reusing Ethereum payload attributes (signature-agnostic) with
+`EthBuiltPayload<PqPrimitives>` for built payloads.
+
+### `PqConsensusBuilder`
+
+Wraps `EthBeaconConsensus` — validates block-level rules (gas, timestamp, etc.)
+without depending on transaction signature type.
+
+### `PqNetworkBuilder`
+
+Reuses the standard Ethereum networking stack. P2P protocol is
+transaction-type agnostic at this layer.
+
+### Status
+
+- `NodeTypes` impl: **complete**
+- `PqExecutorBuilder`: **complete** (in `reth-pq-evm`)
+- `PqConsensusBuilder`: **complete**
+- `PqNetworkBuilder`: **complete**
+- `Node<N>` wiring: **pending** — requires PQ-specific transaction pool and
+  payload builder
+
+---
+
+## Running All PQ Tests
 
 ```bash
 cd pq-reth
@@ -286,44 +402,68 @@ cargo test -p reth-pq-primitives \
            -p reth-pq-pool
 ```
 
-Resultado esperado: **~24 tests, 0 fallos**.
+Expected result: **~24 tests, 0 failures**.
 
 ---
 
-## Flujo completo de una transacción PQ
+## Complete PQ Transaction Flow
 
 ```
 pq-wallet CLI
-    │
-    │  PqTxRequest → PqSigner.sign() → PqSignedTransaction (0x04)
-    │
-    ▼
+    |
+    |  PqTxRequest → PqSigner.sign() → PqSignedTransaction (0x04)
+    |
+    v
 eth_sendRawTransaction (JSON-RPC)
-    │
-    ▼
+    |
+    v
 reth-pq-pool
-    │  PqPoolValidator: gas_limit, gas_price, ML-DSA verify
-    ▼
+    |  PqPoolValidator: gas_limit, gas_price, ML-DSA verify
+    v
 Mempool
-    │
-    ▼
+    |
+    v
 Block builder
-    │  PqTransactionValidator (reth-pq-consensus)
-    ▼
-reth-pq-evm  (PqEvmFactory)
-    │  EVM ejecuta la transacción
-    │  Si el contrato llama a 0x0100 → precompile ML-DSA verify
-    ▼
-Bloque confirmado
+    |  PqTransactionValidator (reth-pq-consensus)
+    v
+reth-pq-evm  (PqEvmConfig → PqEvmFactory)
+    |  PqReceiptBuilder builds receipt
+    |  EVM executes the transaction
+    |  If contract calls 0x0100 → ML-DSA verify precompile
+    v
+Block confirmed
 ```
 
 ---
 
-## Notas de compatibilidad
+## Key Design Decisions
 
-- Las transacciones `0x04` solo son reconocidas por nodos que tengan
-  `PqEvmFactory` activado. Un nodo Reth estándar las rechazará como tipo
-  desconocido.
-- El precompile en `0x0100` es transparente para contratos que no lo llamen:
-  ningún bloque legacy se ve afectado.
-- Este es un **prototipo de investigación**. No usar con fondos reales.
+### `FromRecoveredTx` placement (orphan rules)
+`FromRecoveredTx<PqSignedTransaction> for TxEnv` must live in `reth-pq-primitives`
+(where `PqSignedTransaction` is local), not in `reth-pq-evm`. Rust's orphan
+rule requires at least one local type in the impl.
+
+### `PqEvmConfig` is not a type alias
+`EthEvmConfig` hardcodes `type Primitives = EthPrimitives` — it cannot be
+reused via type alias. `PqEvmConfig` is a standalone struct with its own
+`ConfigureEvm` impl.
+
+### PQ_TX_TYPE = 0x04 maps to TxType::Eip7702
+In alloy's enum, `0x04 = TxType::Eip7702`. In receipts, PQ transactions map
+to this variant. This is acceptable because we never process classic EIP-7702
+transactions.
+
+### ML-DSA is not recoverable
+Unlike ECDSA, ML-DSA signatures cannot recover the public key. The public key
+is included in every transaction. `recover_signer()` simply derives the
+address from the embedded key: `keccak256(pk_bytes)[12..]`.
+
+---
+
+## Compatibility Notes
+
+- PQ transactions (`0x04`) are only recognized by nodes with `PqEvmFactory`
+  active. A standard Reth node will reject them as unknown type.
+- The precompile at `0x0100` is transparent to contracts that don't call it —
+  no legacy block is affected.
+- This is a **research prototype**. Do not use with real funds.
