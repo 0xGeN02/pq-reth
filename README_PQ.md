@@ -14,7 +14,7 @@ for key encapsulation. No backward compatibility with classic transactions.
 | 1 | NodePrimitives (`PqPrimitives`) | **Complete** |
 | 2 | DB Compact codec | **Complete** |
 | 3 | Block execution (EVM config, receipt builder, node types, payload builder) | **Complete** |
-| 4 | RPC layer | Pending |
+| 4 | RPC layer (ETH API, engine validator, RPC converters) | **Complete** |
 | 5 | P2P networking | Pending |
 | 6 | Sender recovery | Pending |
 | 7 | Deprecate ecrecover | Pending |
@@ -43,9 +43,9 @@ pq-reth/crates/pq/
 ├── reth-pq-consensus/        ← PQ transaction validation
 ├── reth-pq-precompile/       ← ML-DSA verify precompile at 0x0100
 ├── reth-pq-pool/             ← mempool integration (PqPooledTransaction, PqPoolValidator)
-├── reth-pq-evm/              ← PqEvmFactory, PqEvmConfig, PqReceiptBuilder, PqExecutorBuilder
+├── reth-pq-evm/              ← PqEvmFactory, PqEvmConfig, PqReceiptBuilder, ConfigureEngineEvm
 ├── reth-pq-node-primitives/  ← PqPrimitives (NodePrimitives impl)
-└── reth-pq-node/             ← PqNode, PqEngineTypes, PqPoolBuilder, PqBuiltPayload, builders
+└── reth-pq-node/             ← PqNode, engine validator, RPC layer, payload/pool/network builders
 ```
 
 ---
@@ -372,7 +372,7 @@ The `Node<N>` impl wires all components via `ComponentsBuilder`:
 - **Pool**: `PqPoolBuilder` (PqPoolValidator + CoinbaseTipOrdering)
 - **Payload**: `BasicPayloadServiceBuilder<PqPayloadBuilderComponent>`
 - **Network**: `PqNetworkBuilder` (standard Ethereum P2P)
-- **AddOns**: `()` (no RPC/engine API yet — Phase 4)
+- **AddOns**: `PqAddOns` (PqEthApiBuilder + PqEngineValidatorBuilder + engine API)
 
 ### `PqEngineTypes`
 
@@ -428,7 +428,36 @@ transaction-type agnostic at this layer.
 - `PqExecutorBuilder`: **complete** (in `reth-pq-evm`)
 - `PqConsensusBuilder`: **complete**
 - `PqNetworkBuilder`: **complete**
-- `PqAddOns` (RPC): **pending** — Phase 4
+- `PqAddOns` (RPC): **complete** — Phase 4
+
+### RPC Layer (Phase 4)
+
+#### `PqRpcTxConverter`
+Converts `PqSignedTransaction` to Ethereum RPC `Transaction<TxEnvelope>` by
+mapping PQ transaction fields to a legacy-format `TxEnvelope::Legacy` with
+dummy ECDSA signatures. The `from` field correctly reflects the PQ-derived
+address.
+
+#### `PqEthApiBuilder`
+Constructs the standard `EthApi` with a custom `RpcConverter` that uses
+`PqRpcTxConverter`. All other converters use Ethereum defaults:
+- `SimTxConverter`: `()` (via feature-gated `TryIntoSimTx` impl — always errors)
+- `TxEnvConverter`: `()` (same EVM types as Ethereum)
+- `SignableTxRequest`: feature-gated impl (always errors — use `sendRawTransaction`)
+
+#### `PqEngineValidator`
+Validates execution payloads for PQ transactions. Delegates to
+`EthereumExecutionPayloadValidator::ensure_well_formed_payload` which is
+generic over `T: SignedTransaction`.
+
+#### `PqEngineValidatorBuilder`
+`PayloadValidatorBuilder` that constructs `PqEngineValidator` from the chain
+spec. Used by `PqAddOns` for engine API validation.
+
+#### `ConfigureEngineEvm<ExecutionData>` for `PqEvmConfig`
+Enables the engine API to process execution payloads. Decodes PQ transactions
+from raw bytes, recovers signers via embedded public keys, and produces
+executable transaction iterators for parallel processing.
 
 ---
 
