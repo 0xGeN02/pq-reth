@@ -120,7 +120,7 @@ impl PqSignedTransaction {
                 None => Bytes::new(),
             },
             value: U256::from(self.tx.value),
-            input: Bytes::copy_from_slice(&self.tx.input),
+            input: self.tx.input.clone(),
             signature: Bytes::copy_from_slice(self.signature.as_bytes()),
             public_key: Bytes::copy_from_slice(self.public_key.as_bytes()),
         }
@@ -142,7 +142,7 @@ impl PqSignedTransaction {
             gas_limit: f.gas_limit,
             to,
             value: f.value.to::<u128>(),
-            input: f.input.to_vec(),
+            input: f.input,
         };
 
         Self::new(

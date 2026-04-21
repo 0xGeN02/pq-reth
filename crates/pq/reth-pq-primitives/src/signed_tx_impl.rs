@@ -2,16 +2,17 @@
 //!
 //! This makes `PqSignedTransaction` a first-class citizen in the reth pipeline
 //! by implementing:
-//!   - `SignerRecoverable`  — sender recovery (from embedded public key)
-//!   - `Transaction`        — alloy_consensus::Transaction fields
-//!   - `TxHashRef`          — cached tx hash
-//!   - `IsTyped2718`        — type byte 0x04
-//!   - `InMemorySize`       — memory accounting
+//!   - `SignerRecoverable`     — sender recovery (from embedded public key)
+//!   - `Transaction`           — alloy_consensus::Transaction fields
+//!   - `TransactionEnvelope`   — typed envelope for receipt building
+//!   - `TxHashRef`             — cached tx hash
+//!   - `IsTyped2718`           — type byte 0x04
+//!   - `InMemorySize`          — memory accounting
 
 use alloy_consensus::{
     crypto::RecoveryError,
     transaction::{SignerRecoverable, TxHashRef},
-    Transaction,
+    Transaction, TransactionEnvelope,
 };
 use alloy_eips::{
     eip2718::{IsTyped2718, Typed2718},
@@ -21,13 +22,31 @@ use alloy_eips::{
 use alloy_primitives::{Bytes, TxKind, B256, U256};
 use reth_primitives_traits::{InMemorySize, SignedTransaction};
 
-use crate::transaction::{PqSignedTransaction, PQ_TX_TYPE};
+use crate::transaction::{PqSignedTransaction, PqTxType, PQ_TX_TYPE};
 
 // ─── Typed2718 ────────────────────────────────────────────────────────────────
 
 impl Typed2718 for PqSignedTransaction {
     fn ty(&self) -> u8 {
         PQ_TX_TYPE
+    }
+}
+
+// ─── Typed2718 for PqTxType ──────────────────────────────────────────────────
+
+impl Typed2718 for PqTxType {
+    fn ty(&self) -> u8 {
+        PQ_TX_TYPE
+    }
+}
+
+// ─── TransactionEnvelope ─────────────────────────────────────────────────────
+
+impl TransactionEnvelope for PqSignedTransaction {
+    type TxType = PqTxType;
+
+    fn tx_type(&self) -> PqTxType {
+        PqTxType
     }
 }
 
@@ -121,11 +140,7 @@ impl Transaction for PqSignedTransaction {
     }
 
     fn input(&self) -> &Bytes {
-        // SAFETY: We return a reference to an empty static Bytes.
-        // A proper implementation would store input as Bytes in PqTransactionRequest.
-        // This is sufficient for the pipeline integration milestone.
-        static EMPTY: Bytes = Bytes::new();
-        &EMPTY
+        &self.tx.input
     }
 
     fn access_list(&self) -> Option<&AccessList> {

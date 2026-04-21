@@ -18,6 +18,7 @@
 //!
 //! ```rust
 //! use reth_pq_primitives::{PqSigner, PqSignedTransaction, PqTransactionRequest};
+//! use alloy_primitives::Bytes;
 //!
 //! let signer = PqSigner::generate();
 //! let tx = PqTransactionRequest {
@@ -26,7 +27,7 @@
 //!     value: 1_000_000_000_000_000_000u128, // 1 ETH in wei
 //!     gas_limit: 21_000,
 //!     gas_price: 1_000_000_000,
-//!     input: vec![],
+//!     input: Bytes::new(),
 //!     chain_id: 1337,
 //! };
 //! let signed = signer.sign_transaction(tx);
@@ -40,8 +41,9 @@ pub mod signature;
 pub mod signed_tx_impl;
 pub mod signer;
 pub mod transaction;
+pub mod tx_env;
 
 pub use error::PqError;
 pub use signature::{PqPublicKey, PqSignature};
 pub use signer::PqSigner;
-pub use transaction::{PqSignedTransaction, PqTransactionRequest, PQ_TX_TYPE};
+pub use transaction::{PqSignedTransaction, PqTransactionRequest, PqTxType, PQ_TX_TYPE};

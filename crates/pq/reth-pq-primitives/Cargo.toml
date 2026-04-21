@@ -18,6 +18,7 @@ dilithium = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "serde"] }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
 
 # RLP encoding/decoding
 alloy-rlp = { workspace = true }
@@ -40,6 +41,7 @@ std = [
     "alloy-primitives/std",
     "alloy-consensus/std",
     "alloy-eips/std",
+    "alloy-evm/std",
     "serde/std",
     "bytes/std",
     "thiserror/std",

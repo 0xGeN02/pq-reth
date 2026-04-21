@@ -3,7 +3,7 @@
 //! [`PqTransactionRequest`] — unsigned transaction fields.
 //! [`PqSignedTransaction`]  — transaction + ML-DSA-65 signature + public key.
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, Bytes, B256};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
@@ -20,6 +20,15 @@ use crate::{
 ///   - 0x02 EIP-1559
 ///   - 0x03 EIP-4844
 pub const PQ_TX_TYPE: u8 = 0x04;
+
+// ─── PqTxType ────────────────────────────────────────────────────────────────
+
+/// Transaction type marker for PQ transactions.
+///
+/// A unit struct implementing `Typed2718`, used as
+/// `<PqSignedTransaction as TransactionEnvelope>::TxType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PqTxType;
 
 // ─── PqTransactionRequest ────────────────────────────────────────────────────
 
@@ -40,7 +49,7 @@ pub struct PqTransactionRequest {
     /// Gas price in wei per gas unit.
     pub gas_price: u128,
     /// Transaction input data (calldata or init code).
-    pub input: Vec<u8>,
+    pub input: Bytes,
     /// Chain ID — mandatory for replay protection.
     pub chain_id: u64,
 }
@@ -144,7 +153,7 @@ mod tests {
             value: 1_000_000_000_000_000_000,
             gas_limit: 21_000,
             gas_price: 1_000_000_000,
-            input: vec![],
+            input: Bytes::new(),
             chain_id: 1337,
         }
     }

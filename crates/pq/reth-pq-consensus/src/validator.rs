@@ -62,6 +62,7 @@ impl PqTransactionValidator {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::Bytes;
     use reth_pq_primitives::{PqSigner, PqTransactionRequest};
 
     use super::*;
@@ -76,7 +77,7 @@ mod tests {
             value: 1_000,
             gas_limit: 21_000,
             gas_price: 1_000_000_000,
-            input: vec![],
+            input: Bytes::new(),
             chain_id: CHAIN_ID,
         })
     }
@@ -108,7 +109,7 @@ mod tests {
             value: 0,
             gas_limit: 0,
             gas_price: 1,
-            input: vec![],
+            input: Bytes::new(),
             chain_id: CHAIN_ID,
         });
         let validator = PqTransactionValidator::new(CHAIN_ID);

@@ -18,6 +18,7 @@
 //! public_key (1952 bytes)
 //! ```
 
+use alloy_primitives::Bytes;
 use bytes::BufMut;
 use reth_codecs::Compact;
 
@@ -95,7 +96,7 @@ impl Compact for PqSignedTransaction {
 
         let input_len = u32::from_be_bytes(buf[..4].try_into().unwrap()) as usize;
         buf = &buf[4..];
-        let input = buf[..input_len].to_vec();
+        let input = Bytes::copy_from_slice(&buf[..input_len]);
         buf = &buf[input_len..];
 
         // Fixed-size signature (3309 bytes)
@@ -119,7 +120,7 @@ impl Compact for PqSignedTransaction {
 mod tests {
     use super::*;
     use crate::PqSigner;
-    use alloy_primitives::Address;
+    use alloy_primitives::{Address, Bytes};
 
     #[test]
     fn compact_roundtrip() {
@@ -130,7 +131,7 @@ mod tests {
             value: 1_000_000_000_000_000_000,
             gas_limit: 21_000,
             gas_price: 1_000_000_000,
-            input: vec![0xde, 0xad, 0xbe, 0xef],
+            input: Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]),
             chain_id: 1337,
         };
         let signed = signer.sign_transaction(tx);
@@ -154,7 +155,7 @@ mod tests {
             value: 0,
             gas_limit: 100_000,
             gas_price: 2_000_000_000,
-            input: vec![0x60, 0x80, 0x60, 0x40],
+            input: Bytes::from_static(&[0x60, 0x80, 0x60, 0x40]),
             chain_id: 1,
         };
         let signed = signer.sign_transaction(tx);

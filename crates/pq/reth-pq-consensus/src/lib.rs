@@ -12,6 +12,7 @@
 //! ```rust
 //! use reth_pq_consensus::PqTransactionValidator;
 //! use reth_pq_primitives::PqSigner;
+//! use alloy_primitives::Bytes;
 //!
 //! let signer = PqSigner::generate();
 //! let tx = reth_pq_primitives::PqTransactionRequest {
@@ -20,7 +21,7 @@
 //!     value: 0,
 //!     gas_limit: 21_000,
 //!     gas_price: 1_000_000_000,
-//!     input: vec![],
+//!     input: Bytes::new(),
 //!     chain_id: 1337,
 //! };
 //! let signed = signer.sign_transaction(tx);
