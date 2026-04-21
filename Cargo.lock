@@ -9679,8 +9679,10 @@ name = "reth-pq-evm"
 version = "1.11.1"
 dependencies = [
  "alloy-consensus",
+ "alloy-eips",
  "alloy-evm",
  "alloy-primitives",
+ "alloy-rpc-types-engine",
  "eyre",
  "reth-chainspec",
  "reth-ethereum-forks",
@@ -9693,6 +9695,7 @@ dependencies = [
  "reth-pq-precompile",
  "reth-pq-primitives",
  "reth-primitives-traits",
+ "reth-storage-errors",
  "revm-precompile",
 ]
 
@@ -9702,8 +9705,10 @@ version = "1.11.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
+ "alloy-network",
  "alloy-primitives",
  "alloy-rpc-types-engine",
+ "alloy-rpc-types-eth",
  "eyre",
  "reth-basic-payload-builder",
  "reth-chainspec",
@@ -9712,6 +9717,7 @@ dependencies = [
  "reth-ethereum-consensus",
  "reth-ethereum-engine-primitives",
  "reth-ethereum-forks",
+ "reth-ethereum-payload-builder",
  "reth-evm",
  "reth-network",
  "reth-node-api",
@@ -9725,6 +9731,10 @@ dependencies = [
  "reth-primitives-traits",
  "reth-provider",
  "reth-revm",
+ "reth-rpc",
+ "reth-rpc-convert",
+ "reth-rpc-eth-api",
+ "reth-rpc-eth-types",
  "reth-storage-api",
  "reth-transaction-pool",
  "revm",
@@ -10154,6 +10164,7 @@ dependencies = [
  "op-alloy-consensus",
  "op-alloy-rpc-types",
  "reth-evm",
+ "reth-pq-primitives",
  "reth-primitives-traits",
  "serde_json",
  "thiserror 2.0.18",

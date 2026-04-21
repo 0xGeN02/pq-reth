@@ -29,7 +29,9 @@
 
 extern crate alloc;
 
+pub mod engine;
 pub mod payload;
+pub mod rpc;
 
 use alloc::sync::Arc;
 
@@ -56,7 +58,10 @@ use reth_node_builder::{
         PoolBuilder,
     },
     node::{Node, NodeTypes},
-    BuilderContext, PayloadBuilderConfig,
+    rpc::{
+        BasicEngineApiBuilder, BasicEngineValidatorBuilder, PayloadValidatorBuilder, RpcAddOns,
+    },
+    AddOnsContext, BuilderContext, NodeAdapter, PayloadBuilderConfig,
 };
 use reth_payload_primitives::{BuiltPayload, PayloadTypes};
 use reth_pq_node_primitives::PqPrimitives;
@@ -71,6 +76,27 @@ use tracing::info;
 
 // Re-export key types for downstream use
 pub use reth_pq_evm::{PqEvmConfig, PqEvmFactory, PqExecutorBuilder, PqReceiptBuilder};
+pub use rpc::{PqEthApiBuilder, PqRpcTxConverter};
+
+// ─── PqAddOns ────────────────────────────────────────────────────────────────
+
+/// Add-ons for the PQ node.
+///
+/// Wraps [`RpcAddOns`] with PQ-specific builders:
+/// - [`PqEthApiBuilder`] — ETH API with PQ transaction conversion
+/// - [`PqEngineValidatorBuilder`] — engine validator for PQ payloads
+/// - [`BasicEngineApiBuilder`] — standard engine API builder
+/// - [`BasicEngineValidatorBuilder`] — standard engine validator builder
+///
+/// The `N` parameter is a fully wired [`NodeAdapter`] — it can't be `PqNode`
+/// directly because `RpcAddOns` requires `N: FullNodeComponents`.
+pub type PqAddOns<N> = RpcAddOns<
+    N,
+    PqEthApiBuilder,
+    PqEngineValidatorBuilder,
+    BasicEngineApiBuilder<PqEngineValidatorBuilder>,
+    BasicEngineValidatorBuilder<PqEngineValidatorBuilder>,
+>;
 
 // ─── PqBuiltPayload ──────────────────────────────────────────────────────────
 
@@ -296,9 +322,7 @@ where
         PqConsensusBuilder,
     >;
 
-    // No RPC or engine API add-ons for now — block execution works without them.
-    // Phase 4 (RPC) will add proper PqAddOns.
-    type AddOns = ();
+    type AddOns = PqAddOns<NodeAdapter<N>>;
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
         ComponentsBuilder::default()
@@ -310,7 +334,15 @@ where
             .network(PqNetworkBuilder)
     }
 
-    fn add_ons(&self) -> Self::AddOns {}
+    fn add_ons(&self) -> Self::AddOns {
+        RpcAddOns::new(
+            PqEthApiBuilder,
+            PqEngineValidatorBuilder::default(),
+            BasicEngineApiBuilder::default(),
+            BasicEngineValidatorBuilder::default(),
+            Default::default(), // Identity middleware
+        )
+    }
 }
 
 // ─── PqPoolBuilder ───────────────────────────────────────────────────────────
@@ -477,5 +509,32 @@ where
             evm_config,
             gas_limit,
         ))
+    }
+}
+
+// ─── PqEngineValidatorBuilder ────────────────────────────────────────────────
+
+/// Builder for [`PqEngineValidator`](engine::PqEngineValidator).
+///
+/// Implements [`PayloadValidatorBuilder`] for the PQ node. Like
+/// `EthereumEngineValidatorBuilder` but constrained to `Primitives = PqPrimitives`.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
+pub struct PqEngineValidatorBuilder;
+
+impl<Node, Types> PayloadValidatorBuilder<Node> for PqEngineValidatorBuilder
+where
+    Types: NodeTypes<
+        ChainSpec: reth_ethereum_forks::Hardforks + EthereumHardforks + Clone + 'static,
+        Payload: EngineTypes<ExecutionData = alloy_rpc_types_engine::ExecutionData>
+            + PayloadTypes<PayloadAttributes = EthPayloadAttributes>,
+        Primitives = PqPrimitives,
+    >,
+    Node: reth_node_api::FullNodeComponents<Types = Types>,
+{
+    type Validator = engine::PqEngineValidator<Types::ChainSpec>;
+
+    async fn build(self, ctx: &AddOnsContext<'_, Node>) -> eyre::Result<Self::Validator> {
+        Ok(engine::PqEngineValidator::new(ctx.config.chain.clone()))
     }
 }

@@ -16,6 +16,9 @@ workspace = true
 reth-primitives-traits.workspace = true
 reth-evm.workspace = true
 
+# post-quantum (optional)
+reth-pq-primitives = { workspace = true, optional = true }
+
 # ethereum
 alloy-primitives.workspace = true
 alloy-rpc-types-eth = { workspace = true, features = ["serde"] }
@@ -43,6 +46,7 @@ serde_json.workspace = true
 
 [features]
 default = []
+pq = ["dep:reth-pq-primitives"]
 op = [
     "dep:op-alloy-consensus",
     "dep:op-alloy-rpc-types",

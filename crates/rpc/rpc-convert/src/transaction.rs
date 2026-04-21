@@ -902,3 +902,27 @@ pub mod op {
         }
     }
 }
+
+// ─── Post-quantum impls (feature = "pq") ────────────────────────────────────
+//
+// These implementations allow the default `()` RPC converters to work with
+// PQ transaction types, avoiding the need for custom converter structs.
+
+#[cfg(feature = "pq")]
+mod pq_impls {
+    use super::*;
+    use reth_pq_primitives::PqSignedTransaction;
+
+    /// PQ transactions cannot be constructed from unsigned `TransactionRequest`s
+    /// because they require ML-DSA-65 signing (not ECDSA). `eth_simulateV1`
+    /// always returns an error for PQ types.
+    impl TryIntoSimTx<PqSignedTransaction> for TransactionRequest {
+        fn try_into_sim_tx(self) -> Result<PqSignedTransaction, ValueError<Self>> {
+            Err(ValueError::new(
+                self,
+                "PQ transactions require ML-DSA-65 signatures; \
+                 cannot construct from unsigned TransactionRequest",
+            ))
+        }
+    }
+}

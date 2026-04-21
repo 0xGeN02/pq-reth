@@ -18,6 +18,9 @@ reth-pq-node-primitives  = { workspace = true }
 # reth / alloy EVM stack
 alloy-evm                = { workspace = true }
 alloy-consensus          = { workspace = true }
+alloy-eips               = { workspace = true }
+alloy-primitives         = { workspace = true }
+alloy-rpc-types-engine   = { workspace = true }
 reth-evm-ethereum        = { workspace = true }
 reth-ethereum-primitives = { workspace = true }
 reth-ethereum-forks      = { workspace = true }
@@ -26,11 +29,11 @@ reth-node-api            = { workspace = true }
 reth-node-builder        = { workspace = true }
 reth-chainspec           = { workspace = true }
 reth-evm                 = { workspace = true }
+reth-storage-errors      = { workspace = true }
 
 # revm types re-exported via alloy-evm
 revm-precompile          = { workspace = true }
 
-alloy-primitives         = { workspace = true }
 eyre                     = { workspace = true }
 
 [features]

@@ -101,3 +101,21 @@ impl SignableTxRequest<op_alloy_consensus::OpTxEnvelope>
         Ok(tx.into_signed(signature).into())
     }
 }
+
+/// Post-quantum transactions cannot be signed via `eth_sendTransaction` because
+/// they use ML-DSA-65 signatures — not ECDSA. The PQ wallet signs externally and
+/// submits via `eth_sendRawTransaction` instead.
+///
+/// This impl satisfies the `SignableTxRequest` bound required by [`RpcConvert`]
+/// but always returns an error at runtime.
+#[cfg(feature = "pq")]
+impl SignableTxRequest<reth_pq_primitives::PqSignedTransaction> for TransactionRequest {
+    async fn try_build_and_sign(
+        self,
+        _signer: impl TxSigner<Signature> + Send,
+    ) -> Result<reth_pq_primitives::PqSignedTransaction, SignTxRequestError> {
+        // PQ transactions require ML-DSA-65 signing which cannot happen through
+        // the ECDSA TxSigner interface. Use eth_sendRawTransaction instead.
+        Err(SignTxRequestError::InvalidTransactionRequest)
+    }
+}

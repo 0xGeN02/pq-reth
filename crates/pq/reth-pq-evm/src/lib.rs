@@ -24,8 +24,11 @@ use alloy_evm::{
     },
     precompiles::PrecompilesMap,
     revm::{
-        context::{BlockEnv, Context, TxEnv},
-        context_interface::result::{EVMError, HaltReason},
+        context::{BlockEnv, CfgEnv, Context, TxEnv},
+        context_interface::{
+            block::BlobExcessGasAndPrice,
+            result::{EVMError, HaltReason},
+        },
         inspector::{Inspector, NoOpInspector},
         interpreter::interpreter::EthInterpreter,
         precompile::{Precompile, PrecompileId, Precompiles},
@@ -35,7 +38,7 @@ use alloy_evm::{
     Database, Evm as EvmTrait, EvmEnv, EvmFactory,
 };
 use core::convert::Infallible;
-use reth_chainspec::{ChainSpec, EthChainSpec};
+use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardforks};
 use reth_ethereum_primitives::Receipt;
 use reth_evm::{
     eth::NextEvmEnvAttributes, ConfigureEvm, NextBlockEnvAttributes,
@@ -49,6 +52,13 @@ use std::sync::OnceLock;
 
 pub use alloy_evm::eth::spec::EthExecutorSpec;
 use reth_ethereum_forks::Hardforks;
+
+use alloy_eips::Decodable2718;
+use alloy_primitives::{Bytes, U256};
+use alloy_rpc_types_engine::ExecutionData;
+use reth_evm::{ConfigureEngineEvm, EvmEnvFor, ExecutableTxIterator, ExecutionCtxFor};
+use reth_primitives_traits::{constants::MAX_TX_GAS_LIMIT_OSAKA, SignedTransaction, TxTy};
+use reth_storage_errors::any::AnyError;
 
 // ─── PqEvmFactory ─────────────────────────────────────────────────────────────
 
@@ -254,6 +264,89 @@ where
             withdrawals: attributes.withdrawals.map(|w| Cow::Owned(w.into_inner())),
             extra_data: attributes.extra_data,
         })
+    }
+}
+
+// ─── ConfigureEngineEvm ──────────────────────────────────────────────────────
+
+impl<C> ConfigureEngineEvm<ExecutionData> for PqEvmConfig<C>
+where
+    C: EthExecutorSpec + EthChainSpec<Header = Header> + EthereumHardforks + Hardforks + 'static,
+{
+    fn evm_env_for_payload(&self, payload: &ExecutionData) -> Result<EvmEnvFor<Self>, Self::Error> {
+        let timestamp = payload.payload.timestamp();
+        let block_number = payload.payload.block_number();
+
+        let blob_params = self.chain_spec().blob_params_at_timestamp(timestamp);
+        let spec = alloy_evm::spec_by_timestamp_and_block_number(
+            self.chain_spec(),
+            timestamp,
+            block_number,
+        );
+
+        let mut cfg_env = CfgEnv::new()
+            .with_chain_id(self.chain_spec().chain().id())
+            .with_spec_and_mainnet_gas_params(spec);
+
+        if let Some(blob_params) = &blob_params {
+            cfg_env.set_max_blobs_per_tx(blob_params.max_blobs_per_tx);
+        }
+
+        if self.chain_spec().is_osaka_active_at_timestamp(timestamp) {
+            cfg_env.tx_gas_limit_cap = Some(MAX_TX_GAS_LIMIT_OSAKA);
+        }
+
+        let blob_excess_gas_and_price =
+            payload.payload.excess_blob_gas().zip(blob_params).map(|(excess_blob_gas, params)| {
+                let blob_gasprice = params.calc_blob_fee(excess_blob_gas);
+                BlobExcessGasAndPrice { excess_blob_gas, blob_gasprice }
+            });
+
+        let block_env = BlockEnv {
+            number: U256::from(block_number),
+            beneficiary: payload.payload.fee_recipient(),
+            timestamp: U256::from(timestamp),
+            difficulty: if spec >= SpecId::MERGE {
+                U256::ZERO
+            } else {
+                payload.payload.as_v1().prev_randao.into()
+            },
+            prevrandao: (spec >= SpecId::MERGE).then(|| payload.payload.as_v1().prev_randao),
+            gas_limit: payload.payload.gas_limit(),
+            basefee: payload.payload.saturated_base_fee_per_gas(),
+            blob_excess_gas_and_price,
+        };
+
+        Ok(EvmEnv { cfg_env, block_env })
+    }
+
+    fn context_for_payload<'a>(
+        &self,
+        payload: &'a ExecutionData,
+    ) -> Result<ExecutionCtxFor<'a, Self>, Self::Error> {
+        Ok(EthBlockExecutionCtx {
+            tx_count_hint: Some(payload.payload.transactions().len()),
+            parent_hash: payload.parent_hash(),
+            parent_beacon_block_root: payload.sidecar.parent_beacon_block_root(),
+            ommers: &[],
+            withdrawals: payload.payload.withdrawals().map(|w| Cow::Borrowed(w.as_slice())),
+            extra_data: payload.payload.as_v1().extra_data.clone(),
+        })
+    }
+
+    fn tx_iterator_for_payload(
+        &self,
+        payload: &ExecutionData,
+    ) -> Result<impl ExecutableTxIterator<Self>, Self::Error> {
+        let txs = payload.payload.transactions().clone();
+        let convert = |tx: Bytes| {
+            let tx =
+                TxTy::<Self::Primitives>::decode_2718_exact(tx.as_ref()).map_err(AnyError::new)?;
+            let signer = tx.try_recover().map_err(AnyError::new)?;
+            Ok::<_, AnyError>(tx.with_signer(signer))
+        };
+
+        Ok((txs, convert))
     }
 }
 
