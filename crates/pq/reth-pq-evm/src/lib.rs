@@ -1,24 +1,27 @@
 //! # reth-pq-evm
 //!
-//! Custom [`EvmFactory`] that extends the standard Ethereum EVM with the
-//! ML-DSA-65 signature verification precompile at address `0x0100`.
+//! Post-quantum EVM configuration for the `pq-reth` client.
 //!
-//! ## Usage
+//! Provides:
+//! - [`PqEvmFactory`] — [`EvmFactory`] with the ML-DSA-65 precompile at `0x0100`
+//! - [`PqReceiptBuilder`] — [`ReceiptBuilder`] for PQ transactions
+//! - [`PqEvmConfig`] — full [`ConfigureEvm`] implementation with `Primitives = PqPrimitives`
+//! - [`PqExecutorBuilder`] — wires the EVM config into the node builder
 //!
-//! Wire `PqEvmConfig` into the node builder via a custom `ExecutorBuilder`:
-//!
-//! ```rust,ignore
-//! use reth_pq_evm::PqExecutorBuilder;
-//!
-//! NodeBuilder::new(node_config)
-//!     .with_types::<EthereumNode>()
-//!     .with_components(EthereumNode::components().executor(PqExecutorBuilder::default()))
-//!     .launch()
-//!     .await?;
-//! ```
+//! The `FromRecoveredTx<PqSignedTransaction>` and `FromTxWithEncoded<PqSignedTransaction>`
+//! impls for `TxEnv` live in `reth-pq-primitives::tx_env` (orphan rules require the local
+//! type to be in the implementing crate).
 
+extern crate alloc;
+
+use alloc::borrow::Cow;
+use alloc::sync::Arc;
+use alloy_consensus::Header;
 use alloy_evm::{
-    eth::{EthEvm, EthEvmContext},
+    eth::{
+        receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx},
+        EthBlockExecutionCtx, EthBlockExecutorFactory, EthEvm, EthEvmContext,
+    },
     precompiles::PrecompilesMap,
     revm::{
         context::{BlockEnv, Context, TxEnv},
@@ -29,16 +32,28 @@ use alloy_evm::{
         primitives::hardfork::SpecId,
         MainBuilder, MainContext,
     },
-    Database, EvmEnv, EvmFactory,
+    Database, Evm as EvmTrait, EvmEnv, EvmFactory,
 };
-use reth_evm_ethereum::EthEvmConfig;
+use core::convert::Infallible;
+use reth_chainspec::{ChainSpec, EthChainSpec};
+use reth_ethereum_primitives::Receipt;
+use reth_evm::{
+    eth::NextEvmEnvAttributes, ConfigureEvm, NextBlockEnvAttributes,
+};
+use reth_evm_ethereum::EthBlockAssembler;
+use reth_pq_node_primitives::PqPrimitives;
 use reth_pq_precompile::{ml_dsa_verify, MLDSA_VERIFY_ADDRESS};
+use reth_pq_primitives::{PqSignedTransaction, PqTxType};
+use reth_primitives_traits::{SealedBlock, SealedHeader};
 use std::sync::OnceLock;
+
+pub use alloy_evm::eth::spec::EthExecutorSpec;
+use reth_ethereum_forks::Hardforks;
 
 // ─── PqEvmFactory ─────────────────────────────────────────────────────────────
 
 /// An [`EvmFactory`] that adds the ML-DSA-65 precompile (`0x0100`) to every
-/// hardfork's precompile set, replacing the standard [`EthPrecompiles`].
+/// hardfork's precompile set.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct PqEvmFactory;
@@ -98,10 +113,151 @@ pub fn pq_precompiles() -> &'static Precompiles {
     })
 }
 
-// ─── Convenience type alias & executor builder ────────────────────────────────
+// ─── PqReceiptBuilder ────────────────────────────────────────────────────────
 
-/// [`EthEvmConfig`] wired with [`PqEvmFactory`].
-pub type PqEvmConfig<C = reth_chainspec::ChainSpec> = EthEvmConfig<C, PqEvmFactory>;
+/// Receipt builder for post-quantum transactions.
+///
+/// Produces [`Receipt`] (`EthereumReceipt<TxType>`) from PQ transaction execution
+/// results. Maps the PQ transaction type to `TxType::Eip7702` (byte 0x04) since
+/// that's the matching alloy enum variant.
+#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+pub struct PqReceiptBuilder;
+
+impl ReceiptBuilder for PqReceiptBuilder {
+    type Transaction = PqSignedTransaction;
+    type Receipt = Receipt;
+
+    fn build_receipt<E: EvmTrait>(
+        &self,
+        ctx: ReceiptBuilderCtx<'_, PqTxType, E>,
+    ) -> Self::Receipt {
+        let ReceiptBuilderCtx { result, cumulative_gas_used, .. } = ctx;
+        // In our fork, PQ_TX_TYPE = 0x04 maps to TxType::Eip7702 in alloy's enum.
+        // This is acceptable because we don't support any classic Ethereum tx types.
+        Receipt {
+            tx_type: alloy_consensus::TxType::Eip7702,
+            success: result.is_success(),
+            cumulative_gas_used,
+            logs: result.into_logs(),
+        }
+    }
+}
+
+// ─── PqEvmConfig ─────────────────────────────────────────────────────────────
+
+/// Post-quantum EVM configuration.
+///
+/// Wraps [`EthBlockExecutorFactory`] with [`PqReceiptBuilder`] and [`PqEvmFactory`],
+/// providing `ConfigureEvm` with `Primitives = PqPrimitives`.
+#[derive(Debug, Clone)]
+pub struct PqEvmConfig<C = ChainSpec> {
+    /// Inner block executor factory.
+    pub executor_factory: EthBlockExecutorFactory<PqReceiptBuilder, Arc<C>, PqEvmFactory>,
+    /// Block assembler (reused from Ethereum — generic over tx type).
+    pub block_assembler: EthBlockAssembler<C>,
+}
+
+impl PqEvmConfig {
+    /// Creates a PQ EVM configuration with the given chain spec.
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
+        Self {
+            block_assembler: EthBlockAssembler::new(chain_spec.clone()),
+            executor_factory: EthBlockExecutorFactory::new(
+                PqReceiptBuilder::default(),
+                chain_spec,
+                PqEvmFactory::default(),
+            ),
+        }
+    }
+}
+
+impl<C> PqEvmConfig<C> {
+    /// Returns the chain spec associated with this configuration.
+    pub const fn chain_spec(&self) -> &Arc<C> {
+        self.executor_factory.spec()
+    }
+}
+
+impl<C> ConfigureEvm for PqEvmConfig<C>
+where
+    C: EthExecutorSpec + EthChainSpec<Header = Header> + Hardforks + 'static,
+{
+    type Primitives = PqPrimitives;
+    type Error = Infallible;
+    type NextBlockEnvCtx = NextBlockEnvAttributes;
+    type BlockExecutorFactory = EthBlockExecutorFactory<PqReceiptBuilder, Arc<C>, PqEvmFactory>;
+    type BlockAssembler = EthBlockAssembler<C>;
+
+    fn block_executor_factory(&self) -> &Self::BlockExecutorFactory {
+        &self.executor_factory
+    }
+
+    fn block_assembler(&self) -> &Self::BlockAssembler {
+        &self.block_assembler
+    }
+
+    fn evm_env(&self, header: &Header) -> Result<EvmEnv<SpecId>, Self::Error> {
+        Ok(EvmEnv::for_eth_block(
+            header,
+            self.chain_spec(),
+            self.chain_spec().chain().id(),
+            self.chain_spec().blob_params_at_timestamp(header.timestamp),
+        ))
+    }
+
+    fn next_evm_env(
+        &self,
+        parent: &Header,
+        attributes: &NextBlockEnvAttributes,
+    ) -> Result<EvmEnv, Self::Error> {
+        Ok(EvmEnv::for_eth_next_block(
+            parent,
+            NextEvmEnvAttributes {
+                timestamp: attributes.timestamp,
+                suggested_fee_recipient: attributes.suggested_fee_recipient,
+                prev_randao: attributes.prev_randao,
+                gas_limit: attributes.gas_limit,
+            },
+            self.chain_spec().next_block_base_fee(parent, attributes.timestamp).unwrap_or_default(),
+            self.chain_spec(),
+            self.chain_spec().chain().id(),
+            self.chain_spec().blob_params_at_timestamp(attributes.timestamp),
+        ))
+    }
+
+    fn context_for_block<'a>(
+        &self,
+        block: &'a SealedBlock<alloy_consensus::Block<PqSignedTransaction>>,
+    ) -> Result<EthBlockExecutionCtx<'a>, Self::Error> {
+        use alloy_consensus::BlockHeader;
+        Ok(EthBlockExecutionCtx {
+            tx_count_hint: Some(block.body().transactions.len()),
+            parent_hash: block.header().parent_hash(),
+            parent_beacon_block_root: block.header().parent_beacon_block_root(),
+            ommers: &block.body().ommers,
+            withdrawals: block.body().withdrawals.as_ref().map(|w| Cow::Borrowed(w.as_slice())),
+            extra_data: block.header().extra_data().clone(),
+        })
+    }
+
+    fn context_for_next_block(
+        &self,
+        parent: &SealedHeader,
+        attributes: Self::NextBlockEnvCtx,
+    ) -> Result<EthBlockExecutionCtx<'_>, Self::Error> {
+        Ok(EthBlockExecutionCtx {
+            tx_count_hint: None,
+            parent_hash: parent.hash(),
+            parent_beacon_block_root: attributes.parent_beacon_block_root,
+            ommers: &[],
+            withdrawals: attributes.withdrawals.map(|w| Cow::Owned(w.into_inner())),
+            extra_data: attributes.extra_data,
+        })
+    }
+}
+
+// ─── PqExecutorBuilder ───────────────────────────────────────────────────────
 
 /// Executor builder that wires [`PqEvmConfig`] into the node.
 #[derive(Debug, Default, Clone, Copy)]
@@ -112,8 +268,8 @@ impl<Node> reth_node_builder::components::ExecutorBuilder<Node> for PqExecutorBu
 where
     Node: reth_node_api::FullNodeTypes<
         Types: reth_node_api::NodeTypes<
-            ChainSpec = reth_chainspec::ChainSpec,
-            Primitives = reth_ethereum_primitives::EthPrimitives,
+            ChainSpec = ChainSpec,
+            Primitives = PqPrimitives,
         >,
     >,
 {
@@ -123,6 +279,6 @@ where
         self,
         ctx: &reth_node_builder::BuilderContext<Node>,
     ) -> eyre::Result<Self::EVM> {
-        Ok(EthEvmConfig::new_with_evm_factory(ctx.chain_spec(), PqEvmFactory::default()))
+        Ok(PqEvmConfig::new(ctx.chain_spec()))
     }
 }

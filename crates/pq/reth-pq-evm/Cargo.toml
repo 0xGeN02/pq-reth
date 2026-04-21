@@ -11,16 +11,21 @@ description = "Post-quantum EVM configuration — wires the ML-DSA-65 precompile
 workspace = true
 
 [dependencies]
-reth-pq-precompile = { workspace = true }
+reth-pq-precompile       = { workspace = true }
+reth-pq-primitives       = { workspace = true }
+reth-pq-node-primitives  = { workspace = true }
 
 # reth / alloy EVM stack
 alloy-evm                = { workspace = true }
+alloy-consensus          = { workspace = true }
 reth-evm-ethereum        = { workspace = true }
 reth-ethereum-primitives = { workspace = true }
+reth-ethereum-forks      = { workspace = true }
 reth-primitives-traits   = { workspace = true }
 reth-node-api            = { workspace = true }
 reth-node-builder        = { workspace = true }
 reth-chainspec           = { workspace = true }
+reth-evm                 = { workspace = true }
 
 # revm types re-exported via alloy-evm
 revm-precompile          = { workspace = true }
