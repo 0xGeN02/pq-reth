@@ -9692,6 +9692,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-pq-node-primitives"
+version = "1.11.1"
+dependencies = [
+ "alloy-consensus",
+ "reth-ethereum-primitives",
+ "reth-pq-primitives",
+ "reth-primitives-traits",
+ "serde",
+]
+
+[[package]]
 name = "reth-pq-pool"
 version = "1.11.1"
 dependencies = [
@@ -9727,6 +9738,7 @@ dependencies = [
  "alloy-rlp",
  "bytes",
  "dilithium",
+ "reth-codecs",
  "reth-primitives-traits",
  "serde",
  "sha3 0.11.0",

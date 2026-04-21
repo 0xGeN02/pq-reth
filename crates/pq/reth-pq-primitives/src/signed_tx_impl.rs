@@ -157,3 +157,10 @@ impl InMemorySize for PqSignedTransaction {
 // ─── SignedTransaction ────────────────────────────────────────────────────────
 
 impl SignedTransaction for PqSignedTransaction {}
+
+// ─── RlpBincode (SerdeBincodeCompat via blanket impl) ────────────────────────
+
+/// Marker impl — `PqSignedTransaction` already satisfies `Encodable + Decodable`
+/// (see `rlp.rs`), so the `SerdeBincodeCompat` blanket impl kicks in and
+/// serialises via RLP for bincode-compatible storage.
+impl reth_primitives_traits::serde_bincode_compat::RlpBincode for PqSignedTransaction {}

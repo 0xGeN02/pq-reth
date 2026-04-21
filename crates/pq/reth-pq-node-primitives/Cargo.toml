@@ -1,0 +1,29 @@
+[package]
+name = "reth-pq-node-primitives"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Post-quantum NodePrimitives — wires PqSignedTransaction as the node's SignedTx type"
+
+[lints]
+workspace = true
+
+[dependencies]
+reth-pq-primitives      = { workspace = true }
+reth-primitives-traits   = { workspace = true, features = ["serde"] }
+reth-ethereum-primitives = { workspace = true }
+
+alloy-consensus = { workspace = true, features = ["serde"] }
+
+serde = { workspace = true, features = ["derive"] }
+
+[features]
+default = ["std"]
+std = [
+    "reth-pq-primitives/std",
+    "reth-ethereum-primitives/std",
+    "alloy-consensus/std",
+    "serde/std",
+]

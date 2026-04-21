@@ -161,6 +161,7 @@ members = [
     "crates/pq/reth-pq-precompile",
     "crates/pq/reth-pq-pool",
     "crates/pq/reth-pq-evm",
+    "crates/pq/reth-pq-node-primitives",
 ]
 default-members = ["bin/reth"]
 exclude = ["docs/cli"]
@@ -333,6 +334,7 @@ reth-pq-consensus = { path = "crates/pq/reth-pq-consensus", default-features = f
 reth-pq-precompile = { path = "crates/pq/reth-pq-precompile", default-features = false }
 reth-pq-pool = { path = "crates/pq/reth-pq-pool", default-features = false }
 reth-pq-evm = { path = "crates/pq/reth-pq-evm", default-features = false }
+reth-pq-node-primitives = { path = "crates/pq/reth-pq-node-primitives", default-features = false }
 # reth
 reth = { path = "bin/reth" }
 reth-storage-rpc-provider = { path = "crates/storage/rpc-provider" }

@@ -33,6 +33,7 @@
 //! assert!(signed.verify().is_ok());
 //! ```
 
+pub mod compact;
 pub mod error;
 pub mod rlp;
 pub mod signature;

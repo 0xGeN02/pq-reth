@@ -23,7 +23,8 @@ alloy-eips = { workspace = true }
 alloy-rlp = { workspace = true }
 
 # reth traits
-reth-primitives-traits = { workspace = true }
+reth-primitives-traits = { workspace = true, features = ["serde-bincode-compat"] }
+reth-codecs = { workspace = true }
 
 # Serialisation
 serde = { workspace = true, features = ["derive"] }
