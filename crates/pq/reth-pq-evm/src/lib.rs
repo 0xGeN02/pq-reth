@@ -108,17 +108,49 @@ impl EvmFactory for PqEvmFactory {
 
 // ─── Precompile set ───────────────────────────────────────────────────────────
 
-/// Prague precompiles extended with the ML-DSA-65 verification precompile.
+/// Address of the deprecated ecrecover precompile.
+const ECRECOVER_ADDRESS: alloy_primitives::Address = {
+    let mut addr = [0u8; 20];
+    addr[19] = 1;
+    alloy_primitives::Address::new(addr)
+};
+
+/// Stub that replaces the ECDSA `ecrecover` precompile.
+///
+/// Returns `PrecompileError::Other` with a descriptive message. In a PQ-only
+/// chain, ECDSA recovery has no place — all signature verification uses
+/// ML-DSA-65 via the precompile at `0x0100`.
+fn ecrecover_disabled(
+    _input: &[u8],
+    _gas_limit: u64,
+) -> alloy_evm::revm::precompile::PrecompileResult {
+    Err(alloy_evm::revm::precompile::PrecompileError::Other(
+        "ecrecover is disabled on post-quantum chains; use ML-DSA-65 precompile at 0x0100".into(),
+    ))
+}
+
+/// Prague precompiles with ecrecover replaced by a disabled stub and the
+/// ML-DSA-65 verification precompile added at `0x0100`.
 pub fn pq_precompiles() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
     INSTANCE.get_or_init(|| {
         let mut precompiles = Precompiles::prague().clone();
+
+        // Replace ecrecover (0x01) with a stub that always errors.
+        // `extend` overwrites existing entries at the same address.
+        let ecrecover_stub = Precompile::new(
+            PrecompileId::custom("ecrecover-disabled"),
+            ECRECOVER_ADDRESS,
+            ecrecover_disabled,
+        );
+
         let mldsa = Precompile::new(
             PrecompileId::custom("ml-dsa-65"),
             MLDSA_VERIFY_ADDRESS,
             ml_dsa_verify,
         );
-        precompiles.extend([mldsa]);
+
+        precompiles.extend([ecrecover_stub, mldsa]);
         precompiles
     })
 }
@@ -373,5 +405,47 @@ where
         ctx: &reth_node_builder::BuilderContext<Node>,
     ) -> eyre::Result<Self::EVM> {
         Ok(PqEvmConfig::new(ctx.chain_spec()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ecrecover_is_disabled() {
+        let precompiles = pq_precompiles();
+        // ecrecover at 0x01 should still exist (not removed) but be a disabled stub
+        assert!(
+            precompiles.contains(&ECRECOVER_ADDRESS),
+            "ecrecover address should be present (replaced, not removed)"
+        );
+        // Calling it should return an error
+        let result = precompiles.get(&ECRECOVER_ADDRESS).unwrap().execute(&[0u8; 128], 100_000);
+        assert!(result.is_err(), "ecrecover should return error on PQ chain");
+    }
+
+    #[test]
+    fn mldsa_precompile_present() {
+        let precompiles = pq_precompiles();
+        assert!(
+            precompiles.contains(&MLDSA_VERIFY_ADDRESS),
+            "ML-DSA precompile at 0x0100 should be present"
+        );
+    }
+
+    #[test]
+    fn standard_precompiles_still_available() {
+        let precompiles = pq_precompiles();
+        // SHA-256 at 0x02 should still work
+        let sha256_addr = {
+            let mut addr = [0u8; 20];
+            addr[19] = 2;
+            alloy_primitives::Address::new(addr)
+        };
+        assert!(
+            precompiles.contains(&sha256_addr),
+            "SHA-256 precompile at 0x02 should still be present"
+        );
     }
 }
