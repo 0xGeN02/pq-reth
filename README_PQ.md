@@ -15,9 +15,9 @@ for key encapsulation. No backward compatibility with classic transactions.
 | 2 | DB Compact codec | **Complete** |
 | 3 | Block execution (EVM config, receipt builder, node types, payload builder) | **Complete** |
 | 4 | RPC layer (ETH API, engine validator, RPC converters) | **Complete** |
-| 5 | P2P networking | Pending |
-| 6 | Sender recovery | Pending |
-| 7 | Deprecate ecrecover | Pending |
+| 5 | P2P networking (generic — no changes needed) | **Complete** |
+| 6 | Sender recovery (generic — no changes needed) | **Complete** |
+| 7 | Deprecate ecrecover (replaced with disabled stub at 0x01) | **Complete** |
 
 ---
 
@@ -474,7 +474,7 @@ cargo test -p reth-pq-primitives \
            -p reth-pq-node
 ```
 
-Expected result: **~18 tests, 0 failures**.
+Expected result: **~21 tests, 0 failures**.
 
 ---
 
@@ -530,6 +530,25 @@ Unlike ECDSA, ML-DSA signatures cannot recover the public key. The public key
 is included in every transaction. `recover_signer()` simply derives the
 address from the embedded key: `keccak256(pk_bytes)[12..]`.
 
+### ecrecover precompile disabled
+The standard `ecrecover` precompile at address `0x01` is replaced with a
+disabled stub that returns `PrecompileError::Other`. This prevents smart
+contracts from using ECDSA signature verification on a PQ chain. All other
+Prague precompiles (SHA-256, RIPEMD-160, modexp, BN254, BLS12-381, etc.)
+remain active.
+
+### P2P networking requires no changes
+Reth's networking stack is fully generic over `NetworkPrimitives`. The
+`BasicNetworkPrimitives` type only requires `SignedTransaction` + `TryFrom`
+bounds, which `PqSignedTransaction` satisfies. Transaction propagation uses
+`Encodable2718`/`Decodable2718` and RLP — all implemented by PQ types.
+
+### Sender recovery is already generic
+The `SenderRecoveryStage` in the staged sync pipeline is generic over
+`SignedTransaction` + `SignerRecoverable`. `PqSignedTransaction` implements
+both traits, with `recover_signer()` deriving addresses from the embedded
+ML-DSA-65 public key. No ECDSA recovery code is used.
+
 ---
 
 ## Compatibility Notes
@@ -538,4 +557,8 @@ address from the embedded key: `keccak256(pk_bytes)[12..]`.
   active. A standard Reth node will reject them as unknown type.
 - The precompile at `0x0100` is transparent to contracts that don't call it —
   no legacy block is affected.
+- The `ecrecover` precompile at `0x01` is disabled — contracts calling it will
+  receive an error. This is intentional for a post-quantum chain.
+- PQ signatures (~3.3 KB for ML-DSA-65) are significantly larger than ECDSA
+  (~65 bytes). This may affect P2P message sizes and transaction pool limits.
 - This is a **research prototype**. Do not use with real funds.
