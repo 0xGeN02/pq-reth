@@ -9730,6 +9730,7 @@ dependencies = [
  "eyre",
  "reth-basic-payload-builder",
  "reth-chainspec",
+ "reth-engine-local",
  "reth-engine-primitives",
  "reth-errors",
  "reth-ethereum-consensus",

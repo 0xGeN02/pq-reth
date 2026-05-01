@@ -181,12 +181,26 @@ where
     let mut best_txs = best_txs(BestTransactionsAttributes::new(base_fee, None));
     let mut total_fees = U256::ZERO;
 
+    debug!(
+        target: "payload_builder",
+        id=%attributes.id,
+        %base_fee,
+        %block_gas_limit,
+        "PQ payload builder starting tx selection"
+    );
+
     builder.apply_pre_execution_changes().map_err(|err| {
         warn!(target: "payload_builder", %err, "failed to apply pre-execution changes");
         PayloadBuilderError::Internal(err.into())
     })?;
 
     while let Some(pool_tx) = best_txs.next() {
+        debug!(
+            target: "payload_builder",
+            tx_hash = ?pool_tx.hash(),
+            gas_limit = pool_tx.gas_limit(),
+            "PQ payload builder got tx from pool"
+        );
         // Gas limit check
         if cumulative_gas_used + pool_tx.gas_limit() > block_gas_limit {
             best_txs.mark_invalid(
@@ -206,14 +220,17 @@ where
 
         // Execute the transaction
         let gas_used = match builder.execute_transaction(tx.clone()) {
-            Ok(gas_used) => gas_used,
+            Ok(gas_used) => {
+                debug!(target: "payload_builder", %gas_used, "PQ tx executed successfully");
+                gas_used
+            }
             Err(BlockExecutionError::Validation(
                 reth_errors::BlockValidationError::InvalidTx { error, .. },
             )) => {
                 if error.is_nonce_too_low() {
-                    trace!(target: "payload_builder", %error, ?tx, "skipping nonce too low transaction");
+                    debug!(target: "payload_builder", %error, "skipping nonce too low PQ transaction");
                 } else {
-                    trace!(target: "payload_builder", %error, ?tx, "skipping invalid transaction and its descendants");
+                    debug!(target: "payload_builder", %error, "skipping invalid PQ transaction and its descendants");
                     best_txs.mark_invalid(
                         &pool_tx,
                         &InvalidPoolTransactionError::Consensus(
@@ -224,7 +241,10 @@ where
                 continue;
             }
             // Fatal error
-            Err(err) => return Err(PayloadBuilderError::evm(err)),
+            Err(err) => {
+                debug!(target: "payload_builder", %err, "PQ tx execution fatal error");
+                return Err(PayloadBuilderError::evm(err));
+            }
         };
 
         // Update fees

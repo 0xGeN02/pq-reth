@@ -62,7 +62,7 @@ impl Decodable for PqSignedTransaction {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         // Consume type byte
         if buf.is_empty() || buf[0] != PQ_TX_TYPE {
-            return Err(alloy_rlp::Error::Custom("expected PQ tx type 0x04"));
+            return Err(alloy_rlp::Error::Custom("expected PQ tx type 0x50"));
         }
         *buf = &buf[1..];
         let fields = PqTxRlpFields::decode(buf)?;

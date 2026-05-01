@@ -44,6 +44,7 @@ use alloy_rpc_types_engine::{
     ExecutionPayloadV3,
 };
 use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardforks};
+use reth_engine_local::LocalPayloadAttributesBuilder;
 use reth_engine_primitives::EngineTypes;
 use reth_ethereum_consensus::EthBeaconConsensus;
 use reth_ethereum_engine_primitives::{
@@ -57,11 +58,12 @@ use reth_node_builder::{
         BasicPayloadServiceBuilder, ComponentsBuilder, ConsensusBuilder, NetworkBuilder,
         PoolBuilder,
     },
+    DebugNode,
     node::{Node, NodeTypes},
     rpc::{
         BasicEngineApiBuilder, BasicEngineValidatorBuilder, PayloadValidatorBuilder, RpcAddOns,
     },
-    AddOnsContext, BuilderContext, NodeAdapter, PayloadBuilderConfig,
+    AddOnsContext, BuilderContext, FullNodeComponents, NodeAdapter, PayloadBuilderConfig,
 };
 use reth_payload_primitives::{BuiltPayload, PayloadTypes};
 use reth_pq_node_primitives::PqPrimitives;
@@ -342,6 +344,32 @@ where
             BasicEngineValidatorBuilder::default(),
             Default::default(), // Identity middleware
         )
+    }
+}
+
+// ─── DebugNode (enables --dev mode auto-mining) ──────────────────────────────
+
+impl<N: FullNodeComponents<Types = Self>> DebugNode<N> for PqNode {
+    type RpcBlock = alloy_rpc_types_eth::Block;
+
+    fn rpc_to_primitive_block(
+        _rpc_block: alloy_rpc_types_eth::Block,
+    ) -> reth_pq_node_primitives::Block {
+        // PQ node doesn't support debug RPC consensus client (--debug.rpc-consensus-ws).
+        // RPC blocks contain standard Ethereum transactions which can't be converted to PQ txs.
+        // This path is only triggered by --debug.rpc-consensus-ws, not by --dev mode.
+        unimplemented!(
+            "PQ node does not support --debug.rpc-consensus-ws (cannot convert ECDSA txs to PQ)"
+        )
+    }
+
+    fn local_payload_attributes_builder(
+        chain_spec: &<PqNode as NodeTypes>::ChainSpec,
+    ) -> impl reth_payload_primitives::PayloadAttributesBuilder<
+        <PqEngineTypes as PayloadTypes>::PayloadAttributes,
+        alloy_consensus::Header,
+    > {
+        LocalPayloadAttributesBuilder::new(Arc::new(chain_spec.clone()))
     }
 }
 

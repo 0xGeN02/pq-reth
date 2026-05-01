@@ -14,12 +14,14 @@ use crate::{
 
 /// EIP-2718 transaction type identifier for PQ transactions.
 ///
-/// `0x04` — chosen to avoid collision with existing types:
+/// `0x50` ('P') — chosen to avoid collision with existing types and EIP-7702:
 ///   - 0x00 Legacy
 ///   - 0x01 EIP-2930
 ///   - 0x02 EIP-1559
 ///   - 0x03 EIP-4844
-pub const PQ_TX_TYPE: u8 = 0x04;
+///   - 0x04 EIP-7702 (Set Code) — **conflicts with previous PQ type!**
+///   - 0x50 PQ (ML-DSA-65) — maps to revm `TransactionType::Custom`
+pub const PQ_TX_TYPE: u8 = 0x50;
 
 // ─── PqTxType ────────────────────────────────────────────────────────────────
 
@@ -195,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn tx_type_is_0x04() {
-        assert_eq!(PQ_TX_TYPE, 0x04);
+    fn tx_type_is_0x50() {
+        assert_eq!(PQ_TX_TYPE, 0x50);
     }
 }

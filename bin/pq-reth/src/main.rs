@@ -39,7 +39,7 @@ fn main() {
             info!(target: "pq-reth::cli", "Launching Post-Quantum node (ML-DSA-65)");
             let handle = builder
                 .node(PqNode::default())
-                .launch()
+                .launch_with_debug_capabilities()
                 .await?;
 
             handle.wait_for_node_exit().await
