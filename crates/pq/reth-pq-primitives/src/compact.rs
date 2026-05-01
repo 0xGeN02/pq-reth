@@ -21,6 +21,7 @@
 use alloy_primitives::Bytes;
 use bytes::BufMut;
 use reth_codecs::Compact;
+use reth_db_api::table::{Compress, Decompress};
 
 use crate::{
     signature::{PqPublicKey, PqSignature},
@@ -113,6 +114,23 @@ impl Compact for PqSignedTransaction {
         let signed = PqSignedTransaction::new(tx, signature, public_key);
 
         (signed, buf)
+    }
+}
+
+// ─── Database Compress / Decompress ──────────────────────────────────────────
+
+impl Compress for PqSignedTransaction {
+    type Compressed = Vec<u8>;
+
+    fn compress_to_buf<B: BufMut + AsMut<[u8]>>(&self, buf: &mut B) {
+        let _ = Compact::to_compact(self, buf);
+    }
+}
+
+impl Decompress for PqSignedTransaction {
+    fn decompress(value: &[u8]) -> Result<Self, reth_db_api::DatabaseError> {
+        let (obj, _) = Compact::from_compact(value, value.len());
+        Ok(obj)
     }
 }
 

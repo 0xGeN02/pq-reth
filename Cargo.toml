@@ -156,6 +156,7 @@ members = [
     "testing/runner",
     "crates/tracing-otlp",
     # Post-Quantum EVM extensions
+    "bin/pq-reth/",
     "crates/pq/reth-pq-primitives",
     "crates/pq/reth-pq-consensus",
     "crates/pq/reth-pq-precompile",

@@ -305,7 +305,7 @@ pub struct PqNode;
 impl NodeTypes for PqNode {
     type Primitives = PqPrimitives;
     type ChainSpec = ChainSpec;
-    type Storage = EthStorage;
+    type Storage = EthStorage<reth_pq_primitives::PqSignedTransaction>;
     type Payload = PqEngineTypes;
 }
 
