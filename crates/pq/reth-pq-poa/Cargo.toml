@@ -1,0 +1,28 @@
+[package]
+name = "reth-pq-poa"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Proof of Authority consensus engine for PQ-EVM using ML-DSA-65"
+
+[lints]
+workspace = true
+
+[dependencies]
+# PQ crypto
+dilithium.workspace = true
+# Hashing (SHAKE-256 for header hash)
+sha3 = "0.11"
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+# Async runtime
+tokio = { version = "1", features = ["time", "sync", "macros", "rt"] }
+# Logging
+tracing = "0.1"
+# Errors
+eyre = "0.6"
+thiserror = "2"

@@ -9773,6 +9773,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-pq-poa"
+version = "1.11.1"
+dependencies = [
+ "dilithium",
+ "eyre",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha3 0.11.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "reth-pq-pool"
 version = "1.11.1"
 dependencies = [
