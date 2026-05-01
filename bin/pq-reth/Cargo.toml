@@ -15,11 +15,13 @@ workspace = true
 [dependencies]
 # PQ node
 reth-pq-node.workspace = true
+reth-pq-poa.workspace = true
 
 # reth
 reth-ethereum-cli.workspace = true
 reth-chainspec.workspace = true
 reth-db = { workspace = true, features = ["mdbx"] }
+reth-engine-local.workspace = true
 reth-provider.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
@@ -31,6 +33,9 @@ tracing.workspace = true
 # misc
 clap = { workspace = true, features = ["derive", "env"] }
 eyre.workspace = true
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
+hex = "0.4"
 
 [features]
 default = [

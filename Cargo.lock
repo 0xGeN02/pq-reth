@@ -7007,14 +7007,19 @@ version = "1.11.1"
 dependencies = [
  "clap",
  "eyre",
+ "hex",
  "reth-chainspec",
  "reth-cli-util",
  "reth-db",
+ "reth-engine-local",
  "reth-ethereum-cli",
  "reth-node-builder",
  "reth-node-core",
  "reth-pq-node",
+ "reth-pq-poa",
  "reth-provider",
+ "serde",
+ "serde_json",
  "tracing",
 ]
 
@@ -9745,6 +9750,7 @@ dependencies = [
  "reth-payload-primitives",
  "reth-pq-evm",
  "reth-pq-node-primitives",
+ "reth-pq-poa",
  "reth-pq-pool",
  "reth-pq-primitives",
  "reth-primitives-traits",
@@ -9778,6 +9784,7 @@ version = "1.11.1"
 dependencies = [
  "dilithium",
  "eyre",
+ "futures-util",
  "hex",
  "serde",
  "serde_json",

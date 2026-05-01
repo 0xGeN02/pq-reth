@@ -16,6 +16,7 @@ reth-pq-primitives      = { workspace = true }
 reth-pq-node-primitives = { workspace = true }
 reth-pq-evm             = { workspace = true }
 reth-pq-pool            = { workspace = true }
+reth-pq-poa             = { workspace = true }
 
 # reth
 reth-basic-payload-builder      = { workspace = true }
