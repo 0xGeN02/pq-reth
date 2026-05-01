@@ -6,23 +6,27 @@
 //!
 //! **Address:** `0x0000000000000000000000000000000000000100`
 //!
-//! Addresses `0x01`–`0x11` are used by built-in Ethereum precompiles (ecrecover,
+//! Addresses `0x01`–`0x13` are used by built-in Ethereum precompiles (ecrecover,
 //! sha256, ripemd160, identity, modexp, bn254, blake2f, kzg, BLS12-381). We use
 //! `0x0100` (256) to avoid any collision with current or near-future EIPs.
 //!
-//! **Input layout (little-endian concatenation):**
+//! **Input layout (concatenation):**
 //! ```text
-//! [ msg_hash  : 32  bytes ]  keccak256 of the signed message
+//! [ msg_hash  : 32  bytes ]  SHAKE-256 hash of the signed message
 //! [ signature : 3309 bytes]  ML-DSA-65 raw signature
 //! [ public_key: 1952 bytes]  ML-DSA-65 raw verifying key
 //! Total input: 5293 bytes
 //! ```
 //!
-//! **Output:**
+//! **Output (32 bytes, ABI-compatible uint256):**
 //! ```text
-//! [ 0x01 ] — valid signature
-//! [ 0x00 ] — invalid signature or malformed input (does NOT revert)
+//! 0x0000...0001  — valid signature   (uint256(1))
+//! 0x0000...0000  — invalid signature (uint256(0))
 //! ```
+//!
+//! The 32-byte output is left-padded for direct use with `abi.decode(result, (uint256))`
+//! or `abi.decode(result, (bool))` in Solidity, matching the convention used by
+//! ecrecover and other precompiles.
 //!
 //! **Gas cost:** 50 000 (static). This reflects the ~0.04s verification time of
 //! ML-DSA-65 vs ~3 000 gas for `ecrecover`. Adjust once benchmarks are available.
@@ -37,7 +41,7 @@
 //! ) internal view returns (bool) {
 //!     bytes memory input = abi.encodePacked(msgHash, signature, publicKey);
 //!     (bool ok, bytes memory result) = address(0x0100).staticcall(input);
-//!     return ok && result.length == 1 && result[0] == 0x01;
+//!     return ok && result.length == 32 && uint256(bytes32(result)) == 1;
 //! }
 //! ```
 
@@ -58,6 +62,16 @@ pub const MLDSA_VERIFY_GAS: u64 = 50_000;
 /// Expected input length: hash (32) + signature (3309) + public_key (1952).
 pub const INPUT_LEN: usize = 32 + 3309 + 1952;
 
+/// 32-byte output for valid signature: uint256(1).
+const OUTPUT_VALID: [u8; 32] = {
+    let mut b = [0u8; 32];
+    b[31] = 1;
+    b
+};
+
+/// 32-byte output for invalid signature: uint256(0).
+const OUTPUT_INVALID: [u8; 32] = [0u8; 32];
+
 // ─── Precompile function ─────────────────────────────────────────────────────
 
 /// ML-DSA-65 signature verification precompile.
@@ -71,8 +85,8 @@ pub fn ml_dsa_verify(input: &[u8], gas_limit: u64) -> PrecompileResult {
 
     // ── Input validation ─────────────────────────────────────────────────────
     if input.len() != INPUT_LEN {
-        // Wrong length — return 0x00 (invalid), don't revert
-        return Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::from_static(&[0x00])));
+        // Wrong length — return uint256(0) (invalid), don't revert
+        return Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::copy_from_slice(&OUTPUT_INVALID)));
     }
 
     let msg_hash = &input[..32];
@@ -82,20 +96,20 @@ pub fn ml_dsa_verify(input: &[u8], gas_limit: u64) -> PrecompileResult {
     // ── Decode public key ─────────────────────────────────────────────────────
     let pk = match decode_verifying_key(pk_bytes) {
         Some(pk) => pk,
-        None => return Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::from_static(&[0x00]))),
+        None => return Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::copy_from_slice(&OUTPUT_INVALID))),
     };
 
     // ── Decode signature ──────────────────────────────────────────────────────
     let sig = match decode_signature(sig_bytes) {
         Some(sig) => sig,
-        None => return Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::from_static(&[0x00]))),
+        None => return Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::copy_from_slice(&OUTPUT_INVALID))),
     };
 
     // ── Verify ───────────────────────────────────────────────────────────────
     let result = dilithium::dilithium65::verify(&pk, msg_hash, &sig);
-    let output_byte: &'static [u8] = if result.is_ok() { &[0x01] } else { &[0x00] };
+    let output = if result.is_ok() { &OUTPUT_VALID } else { &OUTPUT_INVALID };
 
-    Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::from_static(output_byte)))
+    Ok(PrecompileOutput::new(MLDSA_VERIFY_GAS, Bytes::copy_from_slice(output)))
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -148,7 +162,7 @@ mod tests {
         let input = build_input(&hash, &sig, &pk);
 
         let result = ml_dsa_verify(&input, MLDSA_VERIFY_GAS).unwrap();
-        assert_eq!(result.bytes.as_ref(), &[0x01], "valid sig must return 0x01");
+        assert_eq!(result.bytes.as_ref(), &OUTPUT_VALID, "valid sig must return uint256(1)");
         assert_eq!(result.gas_used, MLDSA_VERIFY_GAS);
     }
 
@@ -161,7 +175,7 @@ mod tests {
         let input = build_input(&hash, &sig, &wrong_pk);
 
         let result = ml_dsa_verify(&input, MLDSA_VERIFY_GAS).unwrap();
-        assert_eq!(result.bytes.as_ref(), &[0x00], "wrong pk must return 0x00");
+        assert_eq!(result.bytes.as_ref(), &OUTPUT_INVALID, "wrong pk must return uint256(0)");
     }
 
     #[test]
@@ -172,13 +186,13 @@ mod tests {
         let input = build_input(&hash, &sig, &pk);
 
         let result = ml_dsa_verify(&input, MLDSA_VERIFY_GAS).unwrap();
-        assert_eq!(result.bytes.as_ref(), &[0x00]);
+        assert_eq!(result.bytes.as_ref(), &OUTPUT_INVALID);
     }
 
     #[test]
     fn wrong_input_length_returns_0x00() {
         let result = ml_dsa_verify(&[0u8; 100], MLDSA_VERIFY_GAS).unwrap();
-        assert_eq!(result.bytes.as_ref(), &[0x00]);
+        assert_eq!(result.bytes.as_ref(), &OUTPUT_INVALID);
     }
 
     #[test]
