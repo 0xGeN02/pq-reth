@@ -34,6 +34,9 @@ reth-storage-errors      = { workspace = true }
 # revm types re-exported via alloy-evm
 revm-precompile          = { workspace = true }
 
+# SHAKE-256 for PQHASH opcode (0x21)
+sha3                     = "0.10"
+
 eyre                     = { workspace = true }
 
 [features]
