@@ -1,6 +1,12 @@
 {
   "config": {
     "chainId": 20561,
+    "chainName": "PostQuantumEVM",
+    "nativeCurrency": {
+      "name": "Quantum Ethereum",
+      "symbol": "qETH",
+      "decimals": 18
+    },
     "homesteadBlock": 0,
     "daoForkSupport": false,
     "eip150Block": 0,
