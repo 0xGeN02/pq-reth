@@ -5,7 +5,7 @@
 
 use alloy_primitives::{Address, Bytes, B256};
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
+use sha3::{Shake256, digest::{ExtendableOutput, Update, XofReader}};
 
 use crate::{
     signature::{verify, PqPublicKey, PqSignature},
@@ -55,27 +55,29 @@ pub struct PqTransactionRequest {
 }
 
 impl PqTransactionRequest {
-    /// Compute the signing hash: `keccak256(type || rlp_encode(fields))`.
+    /// Compute the signing hash: `shake256(type || fields, 32)`.
     ///
-    /// For simplicity we use a canonical SSZ-like encoding rather than full
-    /// RLP; a production implementation would use `alloy-rlp`.
+    /// Uses SHAKE-256 (XOF) with 32-byte output for quantum-safe hashing,
+    /// aligned with ML-DSA-65 which uses SHAKE-256 internally.
     pub fn signing_hash(&self) -> B256 {
-        let mut hasher = Keccak256::new();
-        hasher.update([PQ_TX_TYPE]);
-        hasher.update(self.chain_id.to_be_bytes());
-        hasher.update(self.nonce.to_be_bytes());
-        hasher.update(self.gas_price.to_be_bytes());
-        hasher.update(self.gas_limit.to_be_bytes());
+        let mut hasher = Shake256::default();
+        hasher.update(&[PQ_TX_TYPE]);
+        hasher.update(&self.chain_id.to_be_bytes());
+        hasher.update(&self.nonce.to_be_bytes());
+        hasher.update(&self.gas_price.to_be_bytes());
+        hasher.update(&self.gas_limit.to_be_bytes());
         match self.to {
             Some(ref addr) => {
-                hasher.update([1u8]);
+                hasher.update(&[1u8]);
                 hasher.update(addr.as_slice());
             }
-            None => hasher.update([0u8]),
+            None => hasher.update(&[0u8]),
         }
-        hasher.update(self.value.to_be_bytes());
+        hasher.update(&self.value.to_be_bytes());
         hasher.update(&self.input);
-        B256::from_slice(&hasher.finalize())
+        let mut hash = [0u8; 32];
+        hasher.finalize_xof().read(&mut hash);
+        B256::from(hash)
     }
 }
 
@@ -94,7 +96,7 @@ pub struct PqSignedTransaction {
     pub signature: PqSignature,
     /// Signer's ML-DSA-65 public key.
     pub public_key: PqPublicKey,
-    /// Cached transaction hash (keccak256 of the full signed encoding).
+    /// Cached transaction hash (shake256 of the full signed encoding).
     pub hash: B256,
 }
 
@@ -107,7 +109,7 @@ impl PqSignedTransaction {
         Self { tx, signature, public_key, hash }
     }
 
-    /// The transaction hash — `keccak256(type || signing_hash || sig_bytes || pk_bytes)`.
+    /// The transaction hash — `shake256(type || signing_hash || sig_bytes || pk_bytes, 32)`.
     pub fn hash(&self) -> B256 {
         self.hash
     }
@@ -130,12 +132,14 @@ impl PqSignedTransaction {
 
     fn compute_hash(tx: &PqTransactionRequest, sig: &PqSignature, pk: &PqPublicKey) -> B256 {
         let signing_hash = tx.signing_hash();
-        let mut hasher = Keccak256::new();
-        hasher.update([PQ_TX_TYPE]);
+        let mut hasher = Shake256::default();
+        hasher.update(&[PQ_TX_TYPE]);
         hasher.update(signing_hash.as_slice());
         hasher.update(sig.as_bytes());
         hasher.update(pk.as_bytes());
-        B256::from_slice(&hasher.finalize())
+        let mut hash = [0u8; 32];
+        hasher.finalize_xof().read(&mut hash);
+        B256::from(hash)
     }
 }
 

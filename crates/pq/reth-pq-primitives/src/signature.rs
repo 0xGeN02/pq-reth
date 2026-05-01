@@ -34,10 +34,14 @@ impl PqPublicKey {
 
     /// Derive an Ethereum-style `Address` from this public key.
     ///
-    /// Uses the same derivation as ECDSA: `Address = keccak256(pk_bytes)[12..]`.
+    /// Uses SHAKE-256 (XOF with 32-byte output): `Address = shake256(pk_bytes, 32)[12..]`.
+    /// SHAKE-256 aligns with ML-DSA-65 which uses SHAKE-256 internally.
     pub fn to_address(&self) -> Address {
-        use sha3::{Digest, Keccak256};
-        let hash = Keccak256::digest(&self.bytes);
+        use sha3::{Shake256, digest::{ExtendableOutput, Update, XofReader}};
+        let mut hasher = Shake256::default();
+        hasher.update(&self.bytes);
+        let mut hash = [0u8; 32];
+        hasher.finalize_xof().read(&mut hash);
         Address::from_slice(&hash[12..])
     }
 
