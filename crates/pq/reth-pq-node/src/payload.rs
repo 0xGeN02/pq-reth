@@ -28,7 +28,7 @@ use reth_transaction_pool::{
 };
 use revm::context_interface::Block as _;
 use std::sync::Arc;
-use tracing::{debug, trace, warn};
+use tracing::{debug, warn};
 
 use crate::{PqBuiltPayload, PqEvmConfig};
 use reth_ethereum_engine_primitives::{EthBuiltPayload, EthPayloadBuilderAttributes};
