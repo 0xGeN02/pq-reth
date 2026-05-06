@@ -9803,6 +9803,7 @@ dependencies = [
  "alloy-primitives",
  "reth-pq-primitives",
  "reth-primitives-traits",
+ "reth-storage-api",
  "reth-transaction-pool",
  "serde",
  "thiserror 2.0.18",

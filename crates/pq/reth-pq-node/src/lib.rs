@@ -376,8 +376,11 @@ impl<N: FullNodeComponents<Types = Self>> DebugNode<N> for PqNode {
 // ─── PqPoolBuilder ───────────────────────────────────────────────────────────
 
 /// Transaction pool type for the PQ node.
-pub type PqTransactionPool = reth_transaction_pool::Pool<
-    PqPoolValidator,
+///
+/// The `Client` parameter is the state provider factory (typically the node's
+/// blockchain database provider).
+pub type PqTransactionPool<Client> = reth_transaction_pool::Pool<
+    PqPoolValidator<Client>,
     CoinbaseTipOrdering<PqPooledTransaction>,
     DiskFileBlobStore,
 >;
@@ -385,12 +388,8 @@ pub type PqTransactionPool = reth_transaction_pool::Pool<
 /// Pool builder for the PQ node.
 ///
 /// Creates a transaction pool using [`PqPoolValidator`] for ML-DSA-65
-/// signature verification. The pool uses [`CoinbaseTipOrdering`] and
-/// [`DiskFileBlobStore`] (no-op for PQ since we have no blobs).
-///
-/// Note: The current validator reports `balance = U256::MAX` and uses the
-/// transaction's own nonce as state nonce. A production validator would
-/// query the state provider for real account data.
+/// signature verification with full state access (nonce + balance checks).
+/// The pool uses [`CoinbaseTipOrdering`] and [`DiskFileBlobStore`].
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub struct PqPoolBuilder;
@@ -405,7 +404,7 @@ where
     >,
     Evm: ConfigureEvm<Primitives = PqPrimitives> + Clone + 'static,
 {
-    type Pool = PqTransactionPool;
+    type Pool = PqTransactionPool<Node::Provider>;
 
     async fn build_pool(
         self,
@@ -419,14 +418,16 @@ where
             Default::default(),
         )?;
 
+        let validator = PqPoolValidator::new(ctx.provider().clone());
+
         let pool = reth_transaction_pool::Pool::new(
-            PqPoolValidator,
+            validator,
             CoinbaseTipOrdering::default(),
             blob_store,
             pool_config,
         );
 
-        info!(target: "reth::cli", "PQ transaction pool initialized");
+        info!(target: "reth::cli", "PQ transaction pool initialized (with state validation)");
 
         Ok(pool)
     }
