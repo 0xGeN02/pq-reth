@@ -63,7 +63,7 @@ use reth_node_builder::{
     rpc::{
         BasicEngineApiBuilder, BasicEngineValidatorBuilder, PayloadValidatorBuilder, RpcAddOns,
     },
-    AddOnsContext, BuilderContext, FullNodeComponents, NodeAdapter, PayloadBuilderConfig,
+    AddOnsContext, BuilderContext, FullNodeComponents, NodeAdapter,
 };
 use reth_payload_primitives::{BuiltPayload, PayloadTypes};
 use reth_pq_node_primitives::PqPrimitives;
@@ -528,15 +528,13 @@ where
         pool: Pool,
         evm_config: PqEvmConfig,
     ) -> eyre::Result<Self::PayloadBuilder> {
-        let conf = ctx.payload_builder_config();
-        let chain = ctx.chain_spec().chain();
-        let gas_limit = Some(conf.gas_limit_for(chain));
-
+        // Use None so the payload builder follows the parent block's gas limit
+        // (respecting the 1/1024 EIP-1559 adjustment rule).
         Ok(payload::PqPayloadBuilder::new(
             ctx.provider().clone(),
             pool,
             evm_config,
-            gas_limit,
+            None,
         ))
     }
 }
