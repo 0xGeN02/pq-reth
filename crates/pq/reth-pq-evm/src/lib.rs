@@ -80,8 +80,8 @@ const PQHASH_WORD_GAS: u64 = 6;
 
 /// Compute the dynamic gas cost for PQHASH based on data length.
 #[inline]
-fn pqhash_gas_cost(len: usize) -> u64 {
-    let word_count = (len + 31) / 32;
+const fn pqhash_gas_cost(len: usize) -> u64 {
+    let word_count = len.div_ceil(32);
     PQHASH_WORD_GAS * word_count as u64
 }
 
@@ -141,7 +141,7 @@ fn pqhash<WIRE: InterpreterTypes, H: alloy_evm::revm::context_interface::Host + 
         if let Err(result) = alloy_evm::revm::interpreter::interpreter::resize_memory(
             &mut context.interpreter.gas,
             &mut context.interpreter.memory,
-            &gas_params,
+            gas_params,
             from,
             len,
         ) {
@@ -298,7 +298,7 @@ fn classical_curve_disabled(
 /// - `0x02` SHA-256 (hash — Grover reduces to 128-bit, sufficient)
 /// - `0x03` RIPEMD-160 (hash)
 /// - `0x04` Identity (data copy)
-/// - `0x05` ModExp (pure arithmetic)
+/// - `0x05` `ModExp` (pure arithmetic)
 /// - `0x09` Blake2f (hash compression)
 ///
 /// **Added:**

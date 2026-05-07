@@ -42,7 +42,7 @@ pub enum PqPoolError {
     InsufficientBalance {
         /// Sender's available balance.
         balance: U256,
-        /// Maximum cost of the transaction (gas_limit * gas_price + value).
+        /// Maximum cost of the transaction (`gas_limit` * `gas_price` + value).
         max_cost: U256,
     },
 }

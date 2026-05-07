@@ -112,7 +112,7 @@ impl PqSignedTransaction {
     }
 
     /// The transaction hash — `shake256(type || signing_hash || sig_bytes || pk_bytes, 32)`.
-    pub fn hash(&self) -> B256 {
+    pub const fn hash(&self) -> B256 {
         self.hash
     }
 

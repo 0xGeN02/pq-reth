@@ -60,10 +60,10 @@ pub const MLDSA_VERIFY_ADDRESS: Address = address!("0000000000000000000000000000
 ///
 /// Calibrated from benchmarks: ML-DSA-65 verify takes ~42µs vs ecrecover at ~49µs.
 /// Using ecrecover's rate of 61 gas/µs: 42 × 61 = 2,562, plus 20% safety margin.
-/// See docs/GAS_COST_ANALYSIS.md for full derivation.
+/// See `docs/GAS_COST_ANALYSIS.md` for full derivation.
 pub const MLDSA_VERIFY_GAS: u64 = 3_450;
 
-/// Expected input length: hash (32) + signature (3309) + public_key (1952).
+/// Expected input length: hash (32) + signature (3309) + `public_key` (1952).
 pub const INPUT_LEN: usize = 32 + 3309 + 1952;
 
 /// 32-byte output for valid signature: uint256(1).

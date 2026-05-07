@@ -63,8 +63,8 @@ impl Compact for PqSignedTransaction {
 
         // Return the number of bytes written.
         // The hash is NOT stored — it is recomputed on decode.
-        let written = buf.as_mut().len() - start_len;
-        written
+        
+        buf.as_mut().len() - start_len
     }
 
     fn from_compact(mut buf: &[u8], _len: usize) -> (Self, &[u8]) {
@@ -84,13 +84,11 @@ impl Compact for PqSignedTransaction {
 
         let has_to = buf[0];
         buf = &buf[1..];
-        let to = if has_to == 0x01 {
+        let to = (has_to == 0x01).then(|| {
             let addr = Address::from_slice(&buf[..20]);
             buf = &buf[20..];
-            Some(addr)
-        } else {
-            None
-        };
+            addr
+        });
 
         let value = u128::from_be_bytes(buf[..16].try_into().unwrap());
         buf = &buf[16..];
@@ -111,7 +109,7 @@ impl Compact for PqSignedTransaction {
         let tx = PqTransactionRequest { chain_id, nonce, gas_price, gas_limit, to, value, input };
         let signature = PqSignature::from_bytes(sig_bytes);
         let public_key = PqPublicKey::from_bytes(pk_bytes);
-        let signed = PqSignedTransaction::new(tx, signature, public_key);
+        let signed = Self::new(tx, signature, public_key);
 
         (signed, buf)
     }

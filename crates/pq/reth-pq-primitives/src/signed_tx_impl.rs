@@ -3,7 +3,7 @@
 //! This makes `PqSignedTransaction` a first-class citizen in the reth pipeline
 //! by implementing:
 //!   - `SignerRecoverable`     — sender recovery (from embedded public key)
-//!   - `Transaction`           — alloy_consensus::Transaction fields
+//!   - `Transaction`           — `alloy_consensus::Transaction` fields
 //!   - `TransactionEnvelope`   — typed envelope for receipt building
 //!   - `TxHashRef`             — cached tx hash
 //!   - `IsTyped2718`           — type byte 0x04
@@ -56,12 +56,12 @@ impl SignerRecoverable for PqSignedTransaction {
     /// For PQ txs the sender is derived from the embedded ML-DSA-65 public key
     /// rather than recovered from an ECDSA signature.
     fn recover_signer(&self) -> Result<alloy_primitives::Address, RecoveryError> {
-        Ok(PqSignedTransaction::recover_signer(self))
+        Ok(Self::recover_signer(self))
     }
 
     /// Same as `recover_signer` — ML-DSA has no low-s requirement.
     fn recover_signer_unchecked(&self) -> Result<alloy_primitives::Address, RecoveryError> {
-        Ok(PqSignedTransaction::recover_signer(self))
+        Ok(Self::recover_signer(self))
     }
 }
 

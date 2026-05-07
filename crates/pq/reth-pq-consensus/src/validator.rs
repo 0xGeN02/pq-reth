@@ -20,7 +20,7 @@ pub struct PqTransactionValidator {
 
 impl PqTransactionValidator {
     /// Create a new validator for the given chain ID.
-    pub fn new(chain_id: u64) -> Self {
+    pub const fn new(chain_id: u64) -> Self {
         Self { chain_id }
     }
 

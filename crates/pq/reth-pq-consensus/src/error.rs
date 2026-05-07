@@ -30,7 +30,7 @@ pub enum PqConsensusError {
     #[error("gas price must be greater than zero")]
     ZeroGasPrice,
 
-    /// The transaction type byte is not PQ_TX_TYPE (0x04).
+    /// The transaction type byte is not `PQ_TX_TYPE` (0x04).
     #[error("not a PQ transaction (expected type 0x04)")]
     WrongTransactionType,
 }

@@ -1,4 +1,4 @@
-//! PoA consensus engine: drives block production with round-robin slot rotation.
+//! `PoA` consensus engine: drives block production with round-robin slot rotation.
 //!
 //! The engine runs as an async task that:
 //! 1. Monitors a slot timer (configurable, default 5s)
@@ -16,7 +16,7 @@ use tracing::{debug, info, warn};
 use crate::sealer::seal_header;
 use crate::validator::ValidatorSet;
 
-/// Configuration for the PoA engine.
+/// Configuration for the `PoA` engine.
 #[derive(Debug, Clone)]
 pub struct PoaConfig {
     /// Time between slots (block production interval).
@@ -34,7 +34,7 @@ impl Default for PoaConfig {
     }
 }
 
-/// The PoA consensus engine.
+/// The `PoA` consensus engine.
 ///
 /// Drives block production for a set of authorized validators using
 /// ML-DSA-65 signatures in round-robin rotation.
@@ -51,7 +51,7 @@ pub struct PoaEngine {
 }
 
 impl PoaEngine {
-    /// Create a new PoA engine.
+    /// Create a new `PoA` engine.
     pub fn new(
         validator_set: ValidatorSet,
         config: PoaConfig,
@@ -72,12 +72,12 @@ impl PoaEngine {
     }
 
     /// Get the current block number.
-    pub fn current_block(&self) -> u64 {
+    pub const fn current_block(&self) -> u64 {
         self.current_block
     }
 
     /// Advance the block number (called after a block is finalized).
-    pub fn advance_block(&mut self) {
+    pub const fn advance_block(&mut self) {
         self.current_block += 1;
     }
 

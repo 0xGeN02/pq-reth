@@ -16,7 +16,7 @@
 //! PQ_POA_CONFIG=/path/to/poa.json pq-reth node --dev --http
 //! ```
 //!
-//! ## PoA Configuration
+//! ## `PoA` Configuration
 //!
 //! Set the `PQ_POA_CONFIG` environment variable to a JSON file with:
 //! ```json
@@ -30,7 +30,7 @@
 //! }
 //! ```
 //!
-//! When `PQ_POA_CONFIG` is set, the node uses round-robin PoA consensus
+//! When `PQ_POA_CONFIG` is set, the node uses round-robin `PoA` consensus
 //! (only mining on this validator's turn). Without it, the node falls back
 //! to standard dev-mode interval mining.
 
@@ -47,7 +47,7 @@ use reth_pq_poa::{PoaMiningStream, Validator, ValidatorSet};
 use std::time::Duration;
 use tracing::{info, warn};
 
-/// PoA configuration loaded from JSON.
+/// `PoA` configuration loaded from JSON.
 #[derive(serde::Deserialize)]
 struct PoaConfigFile {
     /// Slot time in milliseconds (default: 5000).
@@ -67,7 +67,7 @@ struct ValidatorEntry {
     public_key: String,
 }
 
-fn default_slot_time_ms() -> u64 {
+const fn default_slot_time_ms() -> u64 {
     5000
 }
 
@@ -77,7 +77,7 @@ fn hex_decode(s: &str) -> Vec<u8> {
     hex::decode(s).expect("invalid hex in PoA config")
 }
 
-/// Try to load PoA configuration from the `PQ_POA_CONFIG` environment variable.
+/// Try to load `PoA` configuration from the `PQ_POA_CONFIG` environment variable.
 fn load_poa_config() -> Option<(ValidatorSet, [u8; 20], Duration)> {
     let path = std::env::var("PQ_POA_CONFIG").ok()?;
     let content = std::fs::read_to_string(&path)

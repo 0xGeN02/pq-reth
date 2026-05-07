@@ -23,7 +23,7 @@ pub struct PqPublicKey {
 
 impl PqPublicKey {
     /// Wrap raw verifying-key bytes.
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+    pub const fn from_bytes(bytes: Vec<u8>) -> Self {
         Self { bytes }
     }
 
@@ -64,7 +64,7 @@ pub struct PqSignature {
 
 impl PqSignature {
     /// Wrap raw signature bytes.
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+    pub const fn from_bytes(bytes: Vec<u8>) -> Self {
         Self { bytes }
     }
 

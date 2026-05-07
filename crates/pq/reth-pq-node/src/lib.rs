@@ -147,7 +147,7 @@ impl BuiltPayload for PqBuiltPayload {
 // for the aggregate `ExecutionPayload`). PqSignedTransaction implements both.
 // PQ transactions have no blobs, so blob bundles are always empty.
 
-/// V1: engine_getPayloadV1 response
+/// V1: `engine_getPayloadV1` response
 impl From<PqBuiltPayload> for ExecutionPayloadV1 {
     fn from(value: PqBuiltPayload) -> Self {
         let block = value.0.block().clone();
@@ -155,7 +155,7 @@ impl From<PqBuiltPayload> for ExecutionPayloadV1 {
     }
 }
 
-/// V2: engine_getPayloadV2 response
+/// V2: `engine_getPayloadV2` response
 impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV2 {
     fn from(value: PqBuiltPayload) -> Self {
         let block = value.0.block().clone();
@@ -170,7 +170,7 @@ impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV2 {
     }
 }
 
-/// V3: engine_getPayloadV3 response (Cancun)
+/// V3: `engine_getPayloadV3` response (Cancun)
 impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV3 {
     fn from(value: PqBuiltPayload) -> Self {
         let block = value.0.block().clone();
@@ -188,7 +188,7 @@ impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV3 {
     }
 }
 
-/// V4: engine_getPayloadV4 response (Prague)
+/// V4: `engine_getPayloadV4` response (Prague)
 impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV4 {
     fn from(value: PqBuiltPayload) -> Self {
         let requests = value.0.requests().unwrap_or_default();
@@ -200,7 +200,7 @@ impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV4 {
     }
 }
 
-/// V5: engine_getPayloadV5 response (Osaka)
+/// V5: `engine_getPayloadV5` response (Osaka)
 impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV5 {
     fn from(value: PqBuiltPayload) -> Self {
         let block = value.0.block().clone();
@@ -219,7 +219,7 @@ impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV5 {
     }
 }
 
-/// V6: engine_getPayloadV6 response (Amsterdam — not yet specified)
+/// V6: `engine_getPayloadV6` response (Amsterdam — not yet specified)
 impl From<PqBuiltPayload> for ExecutionPayloadEnvelopeV6 {
     fn from(_value: PqBuiltPayload) -> Self {
         unimplemented!("ExecutionPayloadEnvelopeV6 not yet supported")
@@ -364,7 +364,7 @@ impl<N: FullNodeComponents<Types = Self>> DebugNode<N> for PqNode {
     }
 
     fn local_payload_attributes_builder(
-        chain_spec: &<PqNode as NodeTypes>::ChainSpec,
+        chain_spec: &<Self as NodeTypes>::ChainSpec,
     ) -> impl reth_payload_primitives::PayloadAttributesBuilder<
         <PqEngineTypes as PayloadTypes>::PayloadAttributes,
         alloy_consensus::Header,

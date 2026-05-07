@@ -1,4 +1,4 @@
-//! PoA mining stream for integration with reth's `MiningMode::Trigger`.
+//! `PoA` mining stream for integration with reth's `MiningMode::Trigger`.
 //!
 //! Produces a `Stream<Item = ()>` that yields a value only when this node
 //! is the proposer for the current slot. This stream is fed into reth's
@@ -40,7 +40,7 @@ pub struct PoaMiningStream {
 }
 
 impl PoaMiningStream {
-    /// Create a new PoA mining stream.
+    /// Create a new `PoA` mining stream.
     ///
     /// # Arguments
     ///

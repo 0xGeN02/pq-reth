@@ -1,6 +1,6 @@
 //! # reth-pq-poa
 //!
-//! Proof of Authority consensus engine for PostQuantumEVM.
+//! Proof of Authority consensus engine for `PostQuantumEVM`.
 //! Validators sign blocks with ML-DSA-65 in round-robin rotation.
 //!
 //! ## Integration with reth

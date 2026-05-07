@@ -1,9 +1,9 @@
-//! PoA consensus validation: wraps standard Ethereum consensus with ML-DSA-65
+//! `PoA` consensus validation: wraps standard Ethereum consensus with ML-DSA-65
 //! seal verification on block headers.
 //!
-//! In PoA mode, each block's `extra_data` field contains the proposer's
+//! In `PoA` mode, each block's `extra_data` field contains the proposer's
 //! ML-DSA-65 signature (3309 bytes) over the SHAKE-256 hash of the header
-//! (excluding the extra_data field itself).
+//! (excluding the `extra_data` field itself).
 //!
 //! This validator:
 //! 1. Delegates standard checks (gas, timestamp, etc.) to `EthBeaconConsensus`
@@ -21,10 +21,10 @@ use crate::validator::ValidatorSet;
 /// ML-DSA-65 signature length in bytes.
 const SEAL_LENGTH: usize = 3309;
 
-/// PoA consensus validator for PostQuantumEVM.
+/// `PoA` consensus validator for `PostQuantumEVM`.
 ///
 /// Wraps an inner consensus implementation and adds ML-DSA-65 seal
-/// verification for blocks that contain a PoA seal in `extra_data`.
+/// verification for blocks that contain a `PoA` seal in `extra_data`.
 #[derive(Debug, Clone)]
 pub struct PqPoaConsensus<C> {
     /// Inner consensus (typically `EthBeaconConsensus`).
@@ -34,7 +34,7 @@ pub struct PqPoaConsensus<C> {
 }
 
 impl<C> PqPoaConsensus<C> {
-    /// Create a new PoA consensus validator.
+    /// Create a new `PoA` consensus validator.
     pub fn new(inner: C, validator_set: ValidatorSet) -> Self {
         Self {
             inner,
@@ -42,11 +42,11 @@ impl<C> PqPoaConsensus<C> {
         }
     }
 
-    /// Verify the ML-DSA-65 seal in a block header's extra_data.
+    /// Verify the ML-DSA-65 seal in a block header's `extra_data`.
     ///
     /// Returns `Ok(())` if:
-    /// - The extra_data is not a seal (length != 3309) — passes through
-    /// - The extra_data is a valid seal from the expected proposer
+    /// - The `extra_data` is not a seal (length != 3309) — passes through
+    /// - The `extra_data` is a valid seal from the expected proposer
     ///
     /// Returns `Err(ConsensusError)` if:
     /// - The seal length is correct but signature verification fails
@@ -68,7 +68,7 @@ impl<C> PqPoaConsensus<C> {
 
         // Verify the seal against the proposer's public key
         verify_seal(&proposer.public_key, header_for_hash, extra_data)
-            .map_err(|e| ConsensusError::Other(format!("PoA seal verification failed: {e}").into()))
+            .map_err(|e| ConsensusError::Other(format!("PoA seal verification failed: {e}")))
     }
 }
 

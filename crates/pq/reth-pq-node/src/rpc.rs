@@ -11,10 +11,10 @@
 //! legacy-format `TxEnvelope::Legacy` with dummy ECDSA signatures.
 //!
 //! Other converters use defaults:
-//! - SimTx: `()` works via `TryIntoSimTx<PqSignedTransaction>` (feature-gated in
+//! - `SimTx`: `()` works via `TryIntoSimTx<PqSignedTransaction>` (feature-gated in
 //!   reth-rpc-convert)
-//! - TxEnv: `()` works via `TryIntoTxEnv<TxEnv, BlockEnv>` (same EVM types as Ethereum)
-//! - SignableTxRequest: implemented in reth-rpc-convert (feature-gated), always errors
+//! - `TxEnv`: `()` works via `TryIntoTxEnv<TxEnv, BlockEnv>` (same EVM types as Ethereum)
+//! - `SignableTxRequest`: implemented in reth-rpc-convert (feature-gated), always errors
 
 use alloy_consensus::transaction::Recovered;
 use alloy_consensus::{Signed, TxEnvelope, TxLegacy};

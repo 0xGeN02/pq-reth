@@ -1,8 +1,8 @@
 //! [`PqPoolValidator`] — validates PQ transactions before pool insertion.
 //!
 //! Performs both stateless and stateful validation:
-//! - **Stateless**: gas_limit > 0, gas_price > 0, ML-DSA-65 signature valid
-//! - **Stateful**: sender nonce check, sender balance >= max_cost
+//! - **Stateless**: `gas_limit` > 0, `gas_price` > 0, ML-DSA-65 signature valid
+//! - **Stateful**: sender nonce check, sender balance >= `max_cost`
 
 use alloy_primitives::{Address, U256};
 use reth_pq_primitives::PqSignedTransaction;
@@ -22,7 +22,7 @@ use crate::{error::PqPoolError, pooled::PqPooledTransaction};
 /// - `gas_price > 0`
 /// - ML-DSA-65 signature is valid (stateless)
 /// - Sender nonce >= state nonce (prevents replay)
-/// - Sender balance >= gas_limit × gas_price + value (prevents overdraft)
+/// - Sender balance >= `gas_limit` × `gas_price` + value (prevents overdraft)
 pub struct PqPoolValidator<Client> {
     /// State provider factory for querying account nonce/balance.
     client: Client,
