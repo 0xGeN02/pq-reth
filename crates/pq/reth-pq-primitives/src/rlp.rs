@@ -221,11 +221,11 @@ mod tests {
             nonce: 0,
             gas_price: 1_000_000_000,
             gas_limit: 21_000,
-            to: Bytes::copy_from_slice(&[0xde; 20]),
+            to: Bytes::copy_from_slice(&[0xDEu8; 20][..Address::LEN]),
             value: U256::from(1_000_000_000_000_000_000u128),
             input: Bytes::new(),
-            signature: Bytes::copy_from_slice(&vec![0x11; 3309]),
-            public_key: Bytes::copy_from_slice(&vec![0x22; 1952]),
+            signature: Bytes::copy_from_slice(&vec![0x11u8; 3309]),
+            public_key: Bytes::copy_from_slice(&vec![0x22u8; 1952]),
         };
 
         let mut raw = vec![PQ_TX_TYPE];
