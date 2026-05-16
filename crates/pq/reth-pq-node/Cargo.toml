@@ -55,8 +55,13 @@ alloy-rpc-types-eth      = { workspace = true }
 # revm
 revm                     = { workspace = true }
 
+# networking
+reth-eth-wire-types      = { workspace = true }
+reth-network-peers       = { workspace = true }
+
 # misc
 eyre                     = { workspace = true }
+tokio                    = { workspace = true, features = ["sync"] }
 tracing                  = { workspace = true }
 serde                    = { workspace = true, features = ["derive"] }
 

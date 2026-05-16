@@ -9738,12 +9738,14 @@ dependencies = [
  "reth-engine-local",
  "reth-engine-primitives",
  "reth-errors",
+ "reth-eth-wire-types",
  "reth-ethereum-consensus",
  "reth-ethereum-engine-primitives",
  "reth-ethereum-forks",
  "reth-ethereum-payload-builder",
  "reth-evm",
  "reth-network",
+ "reth-network-peers",
  "reth-node-api",
  "reth-node-builder",
  "reth-payload-builder-primitives",
@@ -9764,6 +9766,7 @@ dependencies = [
  "reth-transaction-pool",
  "revm",
  "serde",
+ "tokio",
  "tracing",
 ]
 

@@ -284,8 +284,12 @@ where
                 });
         }
 
-        if config.dev.dev {
-            info!(target: "reth::cli", "Using local payload attributes builder for dev mode");
+        // Spawn LocalMiner when running in dev mode OR when a custom mining mode
+        // is provided (e.g. PoA consensus). This decouples block production from
+        // --dev, allowing mining with P2P discovery enabled.
+        if config.dev.dev || mining_mode.is_some() {
+            let mode_label = if config.dev.dev { "dev" } else { "custom mining" };
+            info!(target: "reth::cli", "Using local payload attributes builder for {} mode", mode_label);
 
             let blockchain_db = handle.node.provider.clone();
             let chain_spec = config.chain.clone();
@@ -307,16 +311,32 @@ where
 
             let dev_mining_mode =
                 mining_mode.unwrap_or_else(|| handle.node.config.dev_mining_mode(pool));
+
+            // Use chain tip sync when running with a custom mining mode (PoA)
+            // so the miner can detect blocks imported from other validators.
+            let use_chain_tip_sync = !config.dev.dev;
             handle.node.task_executor.spawn_critical_task("local engine", async move {
-                LocalMiner::new(
-                    blockchain_db,
-                    builder,
-                    beacon_engine_handle,
-                    dev_mining_mode,
-                    payload_builder_handle,
-                )
-                .run()
-                .await
+                if use_chain_tip_sync {
+                    LocalMiner::new_with_chain_tip_sync(
+                        blockchain_db,
+                        builder,
+                        beacon_engine_handle,
+                        dev_mining_mode,
+                        payload_builder_handle,
+                    )
+                    .run()
+                    .await
+                } else {
+                    LocalMiner::new(
+                        blockchain_db,
+                        builder,
+                        beacon_engine_handle,
+                        dev_mining_mode,
+                        payload_builder_handle,
+                    )
+                    .run()
+                    .await
+                }
             });
         }
 
