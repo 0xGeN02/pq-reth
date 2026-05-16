@@ -50,6 +50,7 @@ use reth_engine_local::MiningMode;
 use reth_ethereum_cli::chainspec::EthereumChainSpecParser;
 use reth_pq_node::{block_import, PqNode};
 use reth_pq_poa::{PoaMiningStream, Validator, ValidatorSet};
+use reth_storage_api::BlockReader;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -222,6 +223,41 @@ fn main() {
                         .task_executor
                         .spawn_critical_task("poa-block-forwarder", forwarder.run());
                     info!(target: "pq-reth::cli", "PoA block forwarder spawned for peer block import");
+                }
+
+                // Spawn the PoA block announcer to propagate locally-produced
+                // blocks to P2P peers. In PoS, the CL handles this; in PoA
+                // we must do it ourselves.
+                {
+                    let engine_events =
+                        handle.node.add_ons_handle.engine_events.new_listener();
+                    let network = handle.node.network.clone();
+                    let provider = handle.node.provider.clone();
+
+                    // Implement BlockProvider for the actual node provider
+                    struct ProviderAdapter<P>(P);
+                    impl<P> block_import::BlockProvider for ProviderAdapter<P>
+                    where
+                        P: BlockReader<Block = block_import::PqBlock> + Send + Sync + 'static,
+                    {
+                        fn block_by_hash(
+                            &self,
+                            hash: alloy_primitives::B256,
+                        ) -> Option<block_import::PqBlock> {
+                            self.0.block_by_hash(hash).ok().flatten()
+                        }
+                    }
+
+                    let announcer = block_import::PoaBlockAnnouncer::new(
+                        engine_events,
+                        network,
+                        Box::new(ProviderAdapter(provider)),
+                    );
+                    handle
+                        .node
+                        .task_executor
+                        .spawn_critical_task("poa-block-announcer", announcer.run());
+                    info!(target: "pq-reth::cli", "PoA block announcer spawned for P2P block propagation");
                 }
 
                 handle

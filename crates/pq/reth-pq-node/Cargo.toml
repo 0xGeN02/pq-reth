@@ -61,7 +61,9 @@ reth-network-peers       = { workspace = true }
 
 # misc
 eyre                     = { workspace = true }
+reth-tokio-util          = { workspace = true }
 tokio                    = { workspace = true, features = ["sync"] }
+tokio-stream             = { workspace = true }
 tracing                  = { workspace = true }
 serde                    = { workspace = true, features = ["derive"] }
 

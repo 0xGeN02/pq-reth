@@ -7003,6 +7003,7 @@ dependencies = [
 name = "pq-reth"
 version = "1.11.1"
 dependencies = [
+ "alloy-primitives",
  "clap",
  "dilithium",
  "eyre",
@@ -7017,6 +7018,7 @@ dependencies = [
  "reth-pq-node",
  "reth-pq-poa",
  "reth-provider",
+ "reth-storage-api",
  "serde",
  "serde_json",
  "sha3 0.11.0",
@@ -9763,10 +9765,12 @@ dependencies = [
  "reth-rpc-eth-api",
  "reth-rpc-eth-types",
  "reth-storage-api",
+ "reth-tokio-util",
  "reth-transaction-pool",
  "revm",
  "serde",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 

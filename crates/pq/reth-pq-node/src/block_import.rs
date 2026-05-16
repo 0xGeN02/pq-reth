@@ -30,16 +30,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
 
 use alloy_consensus::BlockHeader;
-use alloy_primitives::B256;
+use alloy_primitives::{B256, U128};
 use alloy_rpc_types_engine::ForkchoiceState;
-use reth_engine_primitives::ConsensusEngineHandle;
+use reth_engine_primitives::{ConsensusEngineEvent, ConsensusEngineHandle};
 use reth_eth_wire_types::NewBlock;
+use reth_network::NetworkHandle;
 use reth_network::import::{BlockImport, BlockImportEvent, NewBlockEvent};
 use reth_network_peers::PeerId;
 use reth_payload_primitives::{EngineApiMessageVersion, PayloadTypes};
 use reth_primitives_traits::SealedBlock;
 use reth_pq_node_primitives::PqPrimitives;
+use reth_tokio_util::EventStream;
 use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use crate::PqEngineTypes;
@@ -283,5 +286,89 @@ impl PoaBlockForwarder {
                 );
             }
         }
+    }
+}
+
+// ─── PoaBlockAnnouncer ───────────────────────────────────────────────────────
+
+/// Async task that announces locally-produced blocks to P2P peers.
+///
+/// In PoA mode, `LocalMiner` produces blocks via the engine API (newPayload +
+/// FCU). The engine tree commits them as canonical, emitting
+/// `CanonicalChainCommitted` events. However, reth does NOT automatically
+/// announce engine-committed blocks to P2P peers (by design — in PoS, the
+/// CL handles propagation).
+///
+/// This announcer bridges that gap: it listens for `CanonicalChainCommitted`
+/// events and calls `NetworkHandle::announce_block()` to propagate the block
+/// to connected peers via `NewBlock` messages.
+///
+/// Generic over `N: NetworkPrimitives` to avoid coupling to a specific pool type.
+pub struct PoaBlockAnnouncer<N: reth_eth_wire_types::NetworkPrimitives> {
+    /// Engine event stream — yields `ConsensusEngineEvent` for each canonical update.
+    engine_events: EventStream<ConsensusEngineEvent<PqPrimitives>>,
+    /// Network handle for announcing blocks to peers.
+    network: NetworkHandle<N>,
+    /// Provider for reading blocks from the DB.
+    provider: Box<dyn BlockProvider>,
+}
+
+impl<N: reth_eth_wire_types::NetworkPrimitives> fmt::Debug for PoaBlockAnnouncer<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PoaBlockAnnouncer").finish()
+    }
+}
+
+/// Trait for reading blocks from the provider (type-erased).
+pub trait BlockProvider: Send + Sync + 'static {
+    /// Read a block by hash from the database.
+    fn block_by_hash(&self, hash: B256) -> Option<PqBlock>;
+}
+
+impl<N> PoaBlockAnnouncer<N>
+where
+    N: reth_eth_wire_types::NetworkPrimitives<Block = PqBlock, NewBlockPayload = PqNewBlock>,
+{
+    /// Create a new block announcer.
+    pub fn new(
+        engine_events: EventStream<ConsensusEngineEvent<PqPrimitives>>,
+        network: NetworkHandle<N>,
+        provider: Box<dyn BlockProvider>,
+    ) -> Self {
+        Self { engine_events, network, provider }
+    }
+
+    /// Run the announcer loop.
+    pub async fn run(mut self) {
+        info!(target: "pq-reth::poa", "PoA block announcer started — propagating local blocks to peers");
+        while let Some(event) = self.engine_events.next().await {
+            if let ConsensusEngineEvent::CanonicalChainCommitted(header, _elapsed) = event {
+                let hash = header.hash();
+                let number = header.number();
+
+                // Read the full block from the provider
+                if let Some(block) = self.provider.block_by_hash(hash) {
+                    let new_block = NewBlock {
+                        block,
+                        td: U128::ZERO, // TD is irrelevant for PoA
+                    };
+                    self.network.announce_block(new_block, hash);
+                    debug!(
+                        target: "pq-reth::poa",
+                        %hash,
+                        number,
+                        "Announced canonical block to P2P peers"
+                    );
+                } else {
+                    warn!(
+                        target: "pq-reth::poa",
+                        %hash,
+                        number,
+                        "Canonical block committed but not found in DB — cannot announce"
+                    );
+                }
+            }
+        }
+        warn!(target: "pq-reth::poa", "PoA block announcer event stream closed");
     }
 }
