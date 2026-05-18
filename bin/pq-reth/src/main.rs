@@ -9,11 +9,17 @@
 //! ## Usage
 //!
 //! ```bash
-//! # Start in dev mode (auto-mining, no consensus layer needed)
+//! # Start in dev mode (auto-mining, no consensus layer needed, no peers)
 //! pq-reth node --dev --dev.block-time 5s --http --http.addr 0.0.0.0
 //!
-//! # Start in PoA mode (reads validator config from env or file)
-//! PQ_POA_CONFIG=/path/to/poa.json pq-reth node --dev --http
+//! # Start in PoA multi-node mode (no --dev, P2P discovery enabled)
+//! PQ_POA_CONFIG=/path/to/poa.json PQ_VALIDATOR_SK=<hex-seed> \
+//!   pq-reth node --chain genesis.json --http --http.addr 0.0.0.0 \
+//!   --trusted-peers enode://...@10.5.0.10:30303
+//!
+//! # Start in PoA single-node dev mode (for testing)
+//! PQ_POA_CONFIG=/path/to/poa.json PQ_VALIDATOR_SK=<hex-seed> \
+//!   pq-reth node --dev --http
 //! ```
 //!
 //! ## `PoA` Configuration
@@ -42,8 +48,11 @@ static ALLOC: reth_cli_util::allocator::Allocator = reth_cli_util::allocator::ne
 use clap::Parser;
 use reth_engine_local::MiningMode;
 use reth_ethereum_cli::chainspec::EthereumChainSpecParser;
-use reth_pq_node::PqNode;
+use reth_pq_node::{block_import, PqNode};
 use reth_pq_poa::{PoaMiningStream, Validator, ValidatorSet};
+use reth_storage_api::BlockReader;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -170,24 +179,88 @@ fn main() {
 
             let handle = if let Some((validator_set, local_address, slot_time)) = load_poa_config()
             {
-                // PoA mode: mine only on our turn using round-robin rotation
+                // PoA mode: mine only on our turn using round-robin rotation.
+                //
+                // In multi-node mode (no --dev), the node runs with P2P discovery
+                // enabled. The PoaBlockForwarder imports blocks from other validators
+                // and LocalMiner syncs with the canonical chain tip.
+                //
+                // In single-node mode (--dev), discovery is disabled and all blocks
+                // are produced locally.
                 info!(target: "pq-reth::cli", "Running in PoA consensus mode");
 
-                // Set global validator set for PqConsensusBuilder
+                // Set global validator set for PqConsensusBuilder + PqNetworkBuilder
                 reth_pq_poa::set_validator_set(validator_set.clone());
+
+                // Shared chain tip for PoaMiningStream ↔ PoaBlockForwarder sync.
+                // Initialized to 0 (genesis); updated optimistically by the
+                // stream when proposing, and by the forwarder when importing
+                // peer blocks.
+                let chain_tip = Arc::new(AtomicU64::new(0));
 
                 let poa_stream = PoaMiningStream::new(
                     validator_set,
                     local_address,
                     slot_time,
-                    1, // start_block: genesis is block 0, first to produce is 1
+                    chain_tip.clone(),
                 );
 
-                builder
+                let handle = builder
                     .node(PqNode::default())
                     .launch_with_debug_capabilities()
                     .with_mining_mode(MiningMode::trigger(poa_stream))
-                    .await?
+                    .await?;
+
+                // Spawn the PoA block forwarder for importing blocks from peers.
+                // The channel was created by PqNetworkBuilder when PoA is active.
+                if let Some(rx) = block_import::take_peer_block_receiver() {
+                    let engine_handle =
+                        handle.node.add_ons_handle.beacon_engine_handle.clone();
+                    let forwarder =
+                        block_import::PoaBlockForwarder::new(rx, engine_handle, chain_tip);
+                    handle
+                        .node
+                        .task_executor
+                        .spawn_critical_task("poa-block-forwarder", forwarder.run());
+                    info!(target: "pq-reth::cli", "PoA block forwarder spawned for peer block import");
+                }
+
+                // Spawn the PoA block announcer to propagate locally-produced
+                // blocks to P2P peers. In PoS, the CL handles this; in PoA
+                // we must do it ourselves.
+                {
+                    let engine_events =
+                        handle.node.add_ons_handle.engine_events.new_listener();
+                    let network = handle.node.network.clone();
+                    let provider = handle.node.provider.clone();
+
+                    // Implement BlockProvider for the actual node provider
+                    struct ProviderAdapter<P>(P);
+                    impl<P> block_import::BlockProvider for ProviderAdapter<P>
+                    where
+                        P: BlockReader<Block = block_import::PqBlock> + Send + Sync + 'static,
+                    {
+                        fn block_by_hash(
+                            &self,
+                            hash: alloy_primitives::B256,
+                        ) -> Option<block_import::PqBlock> {
+                            self.0.block_by_hash(hash).ok().flatten()
+                        }
+                    }
+
+                    let announcer = block_import::PoaBlockAnnouncer::new(
+                        engine_events,
+                        network,
+                        Box::new(ProviderAdapter(provider)),
+                    );
+                    handle
+                        .node
+                        .task_executor
+                        .spawn_critical_task("poa-block-announcer", announcer.run());
+                    info!(target: "pq-reth::cli", "PoA block announcer spawned for P2P block propagation");
+                }
+
+                handle
             } else {
                 // Standard dev mode: mine at fixed interval (--dev.block-time)
                 warn!(

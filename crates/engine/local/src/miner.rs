@@ -1,5 +1,6 @@
 //! Contains the implementation of the mining mode for the local engine.
 
+use alloy_consensus::BlockHeader;
 use alloy_primitives::{TxHash, B256};
 use alloy_rpc_types_engine::ForkchoiceState;
 use eyre::OptionExt;
@@ -10,19 +11,20 @@ use reth_payload_primitives::{
     BuiltPayload, EngineApiMessageVersion, PayloadAttributesBuilder, PayloadKind, PayloadTypes,
 };
 use reth_primitives_traits::{HeaderTy, SealedHeaderFor};
-use reth_storage_api::BlockReader;
+use reth_storage_api::{BlockNumReader, BlockReader};
 use reth_transaction_pool::TransactionPool;
 use std::{
     collections::VecDeque,
     fmt,
     future::Future,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 use tokio::time::Interval;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::error;
+use tracing::{debug, error};
 
 /// A mining mode for the local dev engine.
 pub enum MiningMode<Pool: TransactionPool + Unpin> {
@@ -129,8 +131,7 @@ impl<Pool: TransactionPool + Unpin> Future for MiningMode<Pool> {
 }
 
 /// Local miner advancing the chain
-#[derive(Debug)]
-pub struct LocalMiner<T: PayloadTypes, B, Pool: TransactionPool + Unpin> {
+pub struct LocalMiner<T: PayloadTypes, B, Pool: TransactionPool + Unpin, Provider = ()> {
     /// The payload attribute builder for the engine
     payload_attributes_builder: B,
     /// Sender for events to engine.
@@ -143,6 +144,35 @@ pub struct LocalMiner<T: PayloadTypes, B, Pool: TransactionPool + Unpin> {
     last_header: SealedHeaderFor<<T::BuiltPayload as BuiltPayload>::Primitives>,
     /// Stores latest mined blocks.
     last_block_hashes: VecDeque<B256>,
+    /// Closure to query the canonical chain tip from the database.
+    ///
+    /// When set, [`LocalMiner`] re-reads the canonical chain tip before each
+    /// advance/FCU cycle. This is needed for multi-node PoA where blocks from
+    /// other validators are imported by the PoA block forwarder and the miner
+    /// must build on top of the actual chain tip (not just locally produced blocks).
+    chain_tip_fn: Option<
+        Arc<
+            dyn Fn() -> Option<SealedHeaderFor<<T::BuiltPayload as BuiltPayload>::Primitives>>
+                + Send
+                + Sync,
+        >,
+    >,
+    _provider: std::marker::PhantomData<Provider>,
+}
+
+impl<T, B, Pool, Provider> fmt::Debug for LocalMiner<T, B, Pool, Provider>
+where
+    T: PayloadTypes,
+    Pool: TransactionPool + Unpin,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalMiner")
+            .field("mode", &self.mode)
+            .field("last_header_num", &self.last_header.number())
+            .field("block_hashes_len", &self.last_block_hashes.len())
+            .field("has_chain_tip_fn", &self.chain_tip_fn.is_some())
+            .finish()
+    }
 }
 
 impl<T, B, Pool> LocalMiner<T, B, Pool>
@@ -172,6 +202,48 @@ where
             payload_builder,
             last_block_hashes: VecDeque::from([last_header.hash()]),
             last_header,
+            chain_tip_fn: None,
+            _provider: std::marker::PhantomData,
+        }
+    }
+
+    /// Spawns a new [`LocalMiner`] that syncs with the canonical chain tip.
+    ///
+    /// The provider is stored (as a closure) and queried before each mining
+    /// cycle to detect blocks imported by other mechanisms (e.g. PoA peer
+    /// block forwarder).
+    pub fn new_with_chain_tip_sync(
+        provider: impl BlockReader<Header = HeaderTy<<T::BuiltPayload as BuiltPayload>::Primitives>>
+            + Send
+            + Sync
+            + 'static,
+        payload_attributes_builder: B,
+        to_engine: ConsensusEngineHandle<T>,
+        mode: MiningMode<Pool>,
+        payload_builder: PayloadBuilderHandle<T>,
+    ) -> Self {
+        let last_header =
+            provider.sealed_header(provider.best_block_number().unwrap()).unwrap().unwrap();
+
+        let provider = Arc::new(provider);
+        let chain_tip_fn: Arc<
+            dyn Fn() -> Option<SealedHeaderFor<<T::BuiltPayload as BuiltPayload>::Primitives>>
+                + Send
+                + Sync,
+        > = Arc::new(move || {
+            let best = provider.best_block_number().ok()?;
+            provider.sealed_header(best).ok().flatten()
+        });
+
+        Self {
+            payload_attributes_builder,
+            to_engine,
+            mode,
+            payload_builder,
+            last_block_hashes: VecDeque::from([last_header.hash()]),
+            last_header,
+            chain_tip_fn: Some(chain_tip_fn),
+            _provider: std::marker::PhantomData,
         }
     }
 
@@ -182,17 +254,43 @@ where
             tokio::select! {
                 // Wait for the interval or the pool to receive a transaction
                 _ = &mut self.mode => {
+                    self.sync_chain_tip();
                     if let Err(e) = self.advance().await {
                         error!(target: "engine::local", "Error advancing the chain: {:?}", e);
                     }
                 }
                 // send FCU once in a while
                 _ = fcu_interval.tick() => {
+                    self.sync_chain_tip();
                     if let Err(e) = self.update_forkchoice_state().await {
                         error!(target: "engine::local", "Error updating fork choice: {:?}", e);
                     }
                 }
             }
+        }
+    }
+
+    /// Re-read the canonical chain tip from the provider.
+    ///
+    /// If the chain has advanced (e.g. from blocks imported by other validators),
+    /// update `last_header` and `last_block_hashes` to reflect the actual state.
+    fn sync_chain_tip(&mut self) {
+        let Some(chain_tip_fn) = &self.chain_tip_fn else { return };
+        let Some(tip) = chain_tip_fn() else { return };
+        if tip.number() <= self.last_header.number() {
+            return;
+        }
+        debug!(
+            target: "engine::local",
+            old = self.last_header.number(),
+            new = tip.number(),
+            hash = %tip.hash(),
+            "Chain tip advanced by peer blocks"
+        );
+        self.last_block_hashes.push_back(tip.hash());
+        self.last_header = tip;
+        if self.last_block_hashes.len() > 64 {
+            self.last_block_hashes.pop_front();
         }
     }
 

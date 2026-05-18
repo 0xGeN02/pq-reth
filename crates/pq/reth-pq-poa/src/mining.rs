@@ -8,13 +8,22 @@
 //! ## Design
 //!
 //! The stream ticks every `slot_time` (e.g. 5 seconds). At each tick:
-//! 1. Compute the current block number (incremented after each successful yield)
-//! 2. Check if `validators[block_number % len] == local_address`
-//! 3. If yes → yield `()` (triggers block production)
-//! 4. If no → skip (wait for next tick)
+//! 1. Read the current canonical chain tip from the shared `chain_tip`
+//! 2. Compute `next_block = chain_tip + 1`
+//! 3. Check if `validators[next_block % len] == local_address`
+//! 4. If yes → update `chain_tip` optimistically and yield `()`
+//! 5. If no → return `Pending` (wait for next tick)
+//!
+//! ## Multi-node sync
+//!
+//! The `chain_tip` is an [`Arc<AtomicU64>`] shared with the
+//! [`PoaBlockForwarder`](crate::block_import::PoaBlockForwarder), which
+//! updates it when peer blocks are imported. This keeps the proposer
+//! rotation in sync with the actual canonical chain state.
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -35,8 +44,10 @@ pub struct PoaMiningStream {
     local_address: [u8; 20],
     /// Slot timer interval.
     interval: Interval,
-    /// Next block number to propose.
-    next_block: u64,
+    /// Shared canonical chain tip block number. Read on each tick to
+    /// determine the next block. Updated by this stream (local blocks,
+    /// optimistically) and by `PoaBlockForwarder` (peer blocks).
+    chain_tip: Arc<AtomicU64>,
 }
 
 impl PoaMiningStream {
@@ -47,21 +58,24 @@ impl PoaMiningStream {
     /// * `validator_set` - The authorized set of validators
     /// * `local_address` - This node's 20-byte address
     /// * `slot_time` - Time between slots (block production interval)
-    /// * `start_block` - The next block number to be produced (typically chain tip + 1)
+    /// * `chain_tip` - Shared chain tip, initialized to the current tip
+    ///   (typically 0 for a fresh chain). Updated by this stream and
+    ///   by `PoaBlockForwarder`.
     pub fn new(
         validator_set: ValidatorSet,
         local_address: [u8; 20],
         slot_time: Duration,
-        start_block: u64,
+        chain_tip: Arc<AtomicU64>,
     ) -> Self {
         let start = tokio::time::Instant::now() + slot_time;
         let interval = tokio::time::interval_at(start, slot_time);
 
+        let tip = chain_tip.load(Ordering::Relaxed);
         info!(
             address = %hex::encode(local_address),
             validators = validator_set.len(),
             slot_time_ms = slot_time.as_millis(),
-            start_block,
+            chain_tip = tip,
             "PoA mining stream initialized"
         );
 
@@ -69,7 +83,7 @@ impl PoaMiningStream {
             validator_set: Arc::new(validator_set),
             local_address,
             interval,
-            next_block: start_block,
+            chain_tip,
         }
     }
 }
@@ -80,32 +94,40 @@ impl Stream for PoaMiningStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        loop {
-            // Wait for the next slot tick
-            match this.interval.poll_tick(cx) {
-                Poll::Ready(_) => {
-                    let proposer = this.validator_set.proposer_at(this.next_block);
+        // Wait for the next slot tick
+        match this.interval.poll_tick(cx) {
+            Poll::Ready(_) => {
+                let tip = this.chain_tip.load(Ordering::Acquire);
+                let next_block = tip + 1;
+                let proposer = this.validator_set.proposer_at(next_block);
 
-                    if proposer.address == this.local_address {
-                        debug!(
-                            block = this.next_block,
-                            "PoA: our turn to propose"
-                        );
-                        this.next_block += 1;
-                        return Poll::Ready(Some(()));
-                    }
-
+                if proposer.address == this.local_address {
                     debug!(
-                        block = this.next_block,
-                        proposer = %hex::encode(proposer.address),
-                        "PoA: not our turn, skipping slot"
+                        block = next_block,
+                        tip,
+                        "PoA: our turn to propose"
                     );
-                    // Not our turn — increment block counter and wait for next tick.
-                    // Even though we didn't produce, someone else did (or should have).
-                    this.next_block += 1;
+                    // Optimistically advance the chain tip so that the next
+                    // tick sees the correct next_block even if the engine
+                    // hasn't finished importing yet. If the build fails,
+                    // the tip will be corrected by the next peer block or
+                    // the next provider read.
+                    this.chain_tip.store(next_block, Ordering::Release);
+                    return Poll::Ready(Some(()));
                 }
-                Poll::Pending => return Poll::Pending,
+
+                debug!(
+                    block = next_block,
+                    tip,
+                    proposer = %hex::encode(proposer.address),
+                    "PoA: not our turn, waiting for peer block"
+                );
+                // Not our turn — don't advance anything. The chain_tip will
+                // be updated by PoaBlockForwarder when the peer's block
+                // arrives. Wait for the next tick to re-check.
+                Poll::Pending
             }
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -144,29 +166,36 @@ mod tests {
         let sk2 = dilithium65::keygen();
         let sk3 = dilithium65::keygen();
 
+        // Use v2 as local so block 1 (1%3=1) is our turn
         let v1 = make_validator(&sk1);
         let v2 = make_validator(&sk2);
         let v3 = make_validator(&sk3);
-
-        let local_addr = v1.address;
+        let local_addr = v2.address;
         let vs = ValidatorSet::new(vec![v1, v2, v3]);
 
-        // Start at block 0 with very short slot time for testing
+        let chain_tip = Arc::new(AtomicU64::new(0));
         let mut stream = PoaMiningStream::new(
             vs,
             local_addr,
             Duration::from_millis(10),
-            0, // start_block = 0, validator[0] = v1 (us)
+            chain_tip.clone(),
         );
 
-        // First fire: block 0 (0 % 3 == 0 → our turn)
+        // tip=0, next=1, 1%3=1 → v2 (us!) → should fire
         let _ = stream.next().await;
-        // After: next_block = 1
+        // After fire: chain_tip should be 1 (optimistic update)
+        assert_eq!(chain_tip.load(Ordering::Relaxed), 1);
 
-        // Second fire: blocks 1,2 skipped, block 3 fires (3 % 3 == 0)
+        // tip=1, next=2, 2%3=2 → v3, not us → doesn't fire, returns Pending.
+        // Simulate peer producing block 2:
+        chain_tip.store(2, Ordering::Release);
+
+        // tip=2, next=3, 3%3=0 → v1, not us → Pending.
+        // Simulate peer producing block 3:
+        chain_tip.store(3, Ordering::Release);
+
+        // tip=3, next=4, 4%3=1 → v2 (us!) → should fire
         let _ = stream.next().await;
-        // After: next_block = 4
-
-        assert_eq!(stream.next_block, 4);
+        assert_eq!(chain_tip.load(Ordering::Relaxed), 4);
     }
 }

@@ -29,6 +29,7 @@
 
 extern crate alloc;
 
+pub mod block_import;
 pub mod engine;
 pub mod payload;
 pub mod rpc;
@@ -51,7 +52,7 @@ use reth_ethereum_engine_primitives::{
     EthBuiltPayload, EthPayloadAttributes, EthPayloadBuilderAttributes,
 };
 use reth_evm::ConfigureEvm;
-use reth_network::{primitives::BasicNetworkPrimitives, NetworkHandle, PeersInfo};
+use reth_network::{primitives::BasicNetworkPrimitives, NetworkHandle, NetworkManager, PeersInfo};
 use reth_node_api::{FullNodeTypes, NodePrimitives, PrimitivesTy, TxTy};
 use reth_node_builder::{
     components::{
@@ -445,7 +446,12 @@ pub struct PqNetworkBuilder;
 
 impl<Node, Pool> NetworkBuilder<Node, Pool> for PqNetworkBuilder
 where
-    Node: FullNodeTypes<Types: NodeTypes<ChainSpec: reth_ethereum_forks::Hardforks>>,
+    Node: FullNodeTypes<
+        Types: NodeTypes<
+            ChainSpec: reth_ethereum_forks::Hardforks,
+            Primitives = PqPrimitives,
+        >,
+    >,
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TxTy<Node::Types>>>
         + Unpin
         + 'static,
@@ -458,10 +464,38 @@ where
         ctx: &BuilderContext<Node>,
         pool: Pool,
     ) -> eyre::Result<Self::Network> {
-        let network = ctx.network_builder().await?;
-        let handle = ctx.start_network(network, pool);
-        info!(target: "reth::cli", enode=%handle.local_node_record(), "PQ P2P networking initialized");
-        Ok(handle)
+        // Check if PoA is active (validator set has been configured)
+        let poa_active = reth_pq_poa::get_validator_set().is_some();
+
+        if poa_active {
+            // Build network with PoW mode (enables NewBlock propagation) and
+            // custom block import for PoA peer block forwarding.
+            let tx = block_import::create_peer_block_channel();
+            let poa_import = block_import::PoaBlockImport::new(tx);
+
+            let mut config_builder = ctx.network_config_builder()?;
+            config_builder = config_builder
+                .with_pow()  // NetworkMode::Work — enables NewBlock/NewBlockHashes
+                .block_import(Box::new(poa_import));
+
+            let network_config = ctx.build_network_config(config_builder);
+            let network = NetworkManager::builder(network_config).await?;
+            let handle = ctx.start_network(network, pool);
+
+            info!(
+                target: "reth::cli",
+                enode = %handle.local_node_record(),
+                mode = "PoA (NetworkMode::Work)",
+                "PQ P2P networking initialized — peer block import enabled"
+            );
+            Ok(handle)
+        } else {
+            // Standard mode (no PoA) — default NetworkMode::Stake
+            let network = ctx.network_builder().await?;
+            let handle = ctx.start_network(network, pool);
+            info!(target: "reth::cli", enode=%handle.local_node_record(), "PQ P2P networking initialized");
+            Ok(handle)
+        }
     }
 }
 

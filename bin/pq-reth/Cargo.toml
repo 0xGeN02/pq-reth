@@ -23,6 +23,7 @@ reth-chainspec.workspace = true
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-engine-local.workspace = true
 reth-provider.workspace = true
+reth-storage-api.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
 reth-cli-util.workspace = true
@@ -31,6 +32,7 @@ reth-cli-util.workspace = true
 tracing.workspace = true
 
 # misc
+alloy-primitives.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 eyre.workspace = true
 serde_json.workspace = true
